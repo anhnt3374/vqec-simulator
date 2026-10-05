@@ -1,0 +1,60 @@
+# Run with `scripts/dev.sh scripts/check.sh --tidy` (needs a configured cpu-debug build).
+# Focus: correctness, lifetime, concurrency and the naming rules from docs/coding_style.md.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  google-explicit-constructor,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  modernize-*,
+  -modernize-use-nodiscard,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  -performance-inefficient-string-concatenation,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*/(src|tests)/.*'
+FormatStyle: none
+CheckOptions:
+  - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,              value: CamelCase }
+  - { key: readability-identifier-naming.StructCase,             value: CamelCase }
+  - { key: readability-identifier-naming.AbstractClassCase,      value: CamelCase }
+  - { key: readability-identifier-naming.AbstractClassPrefix,    value: I }
+  - { key: readability-identifier-naming.EnumCase,               value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase }
+  - { key: readability-identifier-naming.TypeAliasCase,          value: CamelCase }
+  - { key: readability-identifier-naming.TypedefCase,            value: CamelCase }
+  - { key: readability-identifier-naming.TemplateParameterCase,  value: CamelCase }
+  - { key: readability-identifier-naming.FunctionCase,           value: lower_case }
+  - { key: readability-identifier-naming.MethodCase,             value: lower_case }
+  - { key: readability-identifier-naming.VariableCase,           value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase,          value: lower_case }
+  - { key: readability-identifier-naming.PublicMemberCase,       value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberCase,      value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _ }
+  - { key: readability-identifier-naming.ProtectedMemberCase,    value: lower_case }
+  - { key: readability-identifier-naming.ProtectedMemberSuffix,  value: _ }
+  - { key: readability-identifier-naming.ConstexprVariableCase,  value: CamelCase }
+  - { key: readability-identifier-naming.ConstexprVariablePrefix, value: k }
+  - { key: readability-identifier-naming.ClassConstantCase,      value: CamelCase }
+  - { key: readability-identifier-naming.ClassConstantPrefix,    value: k }
+  - { key: readability-identifier-naming.GlobalConstantCase,     value: CamelCase }
+  - { key: readability-identifier-naming.GlobalConstantPrefix,   value: k }
+  - { key: readability-identifier-naming.MacroDefinitionCase,    value: UPPER_CASE }
+  - { key: readability-function-cognitive-complexity.Threshold,  value: 25 }
+  - { key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor, value: true }
+  - { key: cppcoreguidelines-macro-usage.AllowedRegexp,           value: '^VQEC_LOG_' }
+  - { key: readability-function-size.LineThreshold,              value: 80 }

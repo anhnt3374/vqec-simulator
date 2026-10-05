@@ -1,0 +1,16 @@
+# Overlay for NVIDIA GPUs (needs NVIDIA Container Toolkit on the host):
+#   docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml up --build
+# Set inference.runtime: gpu and inference.backend: tensorrt in config/simulator.yaml.
+services:
+  simulator:
+    build:
+      args:
+        TARGET_RUNTIME: gpu
+    image: vqec-simulator:gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

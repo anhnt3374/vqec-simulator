@@ -1,0 +1,13 @@
+.git
+.cache
+build
+data
+models/**/*.onnx
+models/**/*.engine
+models/**/*.plan
+models/**/*.bin
+models/cache
+tests/data/media
+config/*.yaml
+!config/*.example.yaml
+**/*.db

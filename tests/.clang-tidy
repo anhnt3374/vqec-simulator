@@ -1,0 +1,5 @@
+# Tests inherit the project config. GoogleTest fixtures are abstract classes by construction
+# (TestBody is pure virtual), so the "I" prefix rule for interfaces does not apply here.
+InheritParentConfig: true
+CheckOptions:
+  - { key: readability-identifier-naming.AbstractClassPrefix, value: '' }

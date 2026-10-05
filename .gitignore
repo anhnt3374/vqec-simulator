@@ -1,0 +1,41 @@
+# Build outputs and tool caches
+/build/
+/.cache/
+compile_commands.json
+
+# Local runtime configuration (only *.example.yaml is tracked)
+/config/*.yaml
+!/config/*.example.yaml
+
+# Runtime data: recordings, snapshots, databases
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Model binaries and engine caches (metadata lives in models/manifest.yaml)
+/models/**/*.onnx
+/models/**/*.engine
+/models/**/*.plan
+/models/**/*.trt
+/models/**/*.bin
+/models/**/*.xml
+/models/**/*.rknn
+/models/**/*.dlc
+/models/**/*.hef
+/models/cache/
+
+# Large test media (downloaded, never committed)
+/tests/data/media/
+
+# Secrets
+.env
+*.pem
+*.key
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp

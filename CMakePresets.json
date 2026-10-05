@@ -1,0 +1,82 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+      }
+    },
+    {
+      "name": "cpu",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": { "VQEC_RUNTIME": "cpu" }
+    },
+    {
+      "name": "gpu",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": { "VQEC_RUNTIME": "gpu" }
+    },
+    {
+      "name": "cpu-debug",
+      "displayName": "CPU Debug",
+      "inherits": "cpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "cpu-release",
+      "displayName": "CPU Release",
+      "inherits": "cpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "cpu-asan",
+      "displayName": "CPU Debug + ASan/UBSan",
+      "inherits": "cpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "VQEC_ENABLE_SANITIZERS": "ON" }
+    },
+    {
+      "name": "gpu-debug",
+      "displayName": "GPU Debug",
+      "inherits": "gpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "gpu-release",
+      "displayName": "GPU Release",
+      "inherits": "gpu",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "cpu-debug", "configurePreset": "cpu-debug" },
+    { "name": "cpu-release", "configurePreset": "cpu-release" },
+    { "name": "cpu-asan", "configurePreset": "cpu-asan" },
+    { "name": "gpu-debug", "configurePreset": "gpu-debug" },
+    { "name": "gpu-release", "configurePreset": "gpu-release" }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "integration" } }
+    },
+    { "name": "cpu-debug", "inherits": "test-base", "configurePreset": "cpu-debug" },
+    { "name": "cpu-asan", "inherits": "test-base", "configurePreset": "cpu-asan" },
+    { "name": "gpu-debug", "inherits": "test-base", "configurePreset": "gpu-debug" },
+    {
+      "name": "cpu-debug-integration",
+      "configurePreset": "cpu-debug",
+      "output": { "outputOnFailure": true },
+      "filter": { "include": { "label": "integration" } }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Model registry. Only metadata is committed; binaries sit next to this file and are git-ignored.
+# One entry per model version. Bump the id suffix (_v2) when weights change so embeddings and
+# vector collections of different versions never mix.
+#
+# Fields:
+#   id           unique, snake_case, includes version for embedding models
+#   task         detection | embedding | classification
+#   labels       class names indexed by class id (detection/classification)
+#   input        what the model codec must produce: size, layout, color order, dtype, scaling
+#   artifacts    one file per backend; tensorrt engines are built from the onnx file at first load
+#                and cached under models/cache/ (they are specific to GPU + TensorRT version)
+#   sha256       of each artifact, verified at load time (empty until the artifact is added)
+
+models:
+  - id: yolov8n_coco
+    task: detection
+    labels: [person, bicycle, car, motorcycle, airplane, bus, train, truck]  # truncated example: list all 80 COCO classes
+    input: {width: 640, height: 640, layout: nchw, color: rgb, dtype: float32, scale: 0.00392157, letterbox: true}
+    artifacts:
+      onnxruntime: {file: yolov8n.onnx, sha256: ""}
+      tensorrt: {file: yolov8n.onnx, sha256: "", precision: fp16}

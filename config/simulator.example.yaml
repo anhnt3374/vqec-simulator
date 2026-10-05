@@ -1,0 +1,54 @@
+# VQEC Simulator configuration — the reference for the schema (src/bootstrap/app_config.hpp).
+# Copy to config/simulator.yaml (git-ignored) and adjust. Any string value may reference an
+# environment variable as ${NAME}; use that for credentials, e.g.
+#   source: rtsp://${CAM1_USER}:${CAM1_PASSWORD}@192.168.1.10:554/stream1
+# Coordinates of zones and gates are normalized to the frame: x and y in [0, 1], origin top-left.
+
+logging:
+  level: info                 # trace | debug | info | warning | error | critical | off
+  directory: /var/log/vqec    # empty or omitted: console only
+  max_file_size_mb: 50
+  max_files: 10
+  stats_interval_s: 10        # per-stream fps/latency summary
+
+http:
+  listen_address: 0.0.0.0
+  port: 8080
+  web_root: /opt/vqec/share/vqec/web
+
+inference:
+  runtime: cpu                # cpu | gpu | npu
+  backend: onnxruntime        # onnxruntime | tensorrt | openvino
+  device_id: 0
+  models_dir: /opt/vqec/models
+
+storage:
+  sql_driver: sqlite          # sqlite | postgres
+  sql_uri: /var/lib/vqec/simulator.db
+  vector_driver: qdrant       # qdrant | memory
+  vector_uri: http://qdrant:6333
+  media_dir: /data/media      # snapshots and recordings
+
+streams:
+  - id: cam_entrance
+    source: /data/videos/entrance.mp4          # or rtsp://host:554/path
+    outputs:
+      - rtsp://mediamtx:8554/cam_entrance       # annotated live view (WebUI plays it via MediaMTX)
+      - /data/out/cam_entrance.mp4              # annotated recording
+    detector: yolov8n_coco                      # id from models/manifest.yaml
+    zones:
+      - id: restricted_area
+        name: Restricted area
+        polygon: [[0.10, 0.55], [0.45, 0.55], [0.45, 0.95], [0.10, 0.95]]
+    gates:
+      - id: main_door
+        name: Main door
+        line: [[0.55, 0.60], [0.95, 0.60]]      # drawn left -> right: moving down = forward
+    solutions:
+      - type: zone_intrusion
+        zones: [restricted_area]                # omit for all zones
+        labels: [person]                        # omit for all labels
+        anchor: bottom_center                   # bottom_center | center
+      - type: line_crossing
+        gates: [main_door]
+        labels: [person]

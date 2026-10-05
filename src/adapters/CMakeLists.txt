@@ -1,0 +1,34 @@
+# Each adapter is its own target, built only when its VQEC_WITH_* option is ON
+# (cmake/vqec_options.cmake). An adapter target links vqec_ports plus its own third-party
+# libraries, never vqec_application or another adapter family.
+
+# Runtime-agnostic inference contracts (no third-party deps), always built.
+add_subdirectory(outbound/inference/engine)
+
+if(VQEC_WITH_DROGON)
+    add_subdirectory(inbound/http)
+endif()
+if(VQEC_WITH_FFMPEG)
+    add_subdirectory(outbound/media/ffmpeg)
+endif()
+if(VQEC_WITH_BYTETRACK)
+    add_subdirectory(outbound/tracking/bytetrack)
+endif()
+if(VQEC_WITH_SQLITE)
+    add_subdirectory(outbound/persistence/sqlite)
+endif()
+if(VQEC_WITH_POSTGRES)
+    add_subdirectory(outbound/persistence/postgres)
+endif()
+if(VQEC_WITH_QDRANT)
+    add_subdirectory(outbound/vectordb/qdrant)
+endif()
+if(VQEC_WITH_ONNXRUNTIME)
+    add_subdirectory(outbound/inference/runtimes/onnxruntime)
+endif()
+if(VQEC_WITH_TENSORRT)
+    add_subdirectory(outbound/inference/runtimes/tensorrt)
+endif()
+if(VQEC_WITH_OPENVINO)
+    add_subdirectory(outbound/inference/runtimes/openvino)
+endif()

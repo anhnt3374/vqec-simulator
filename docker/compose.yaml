@@ -1,0 +1,56 @@
+# Full stack for local runs:  docker compose -f docker/compose.yaml up --build
+# GPU variant:                docker compose -f docker/compose.yaml -f docker/compose.gpu.yaml up --build
+# Requires config/simulator.yaml (copy config/simulator.example.yaml).
+name: vqec-simulator
+
+services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        TARGET_RUNTIME: cpu
+    image: vqec-simulator:cpu
+    restart: unless-stopped
+    env_file:
+      - path: ../.env          # camera credentials etc. referenced as ${NAME} in the config
+        required: false
+    volumes:
+      - ../config:/etc/vqec:ro
+      - ../models:/opt/vqec/models:ro
+      - ../data:/data
+      - simulator_db:/var/lib/vqec
+      - simulator_logs:/var/log/vqec
+    ports:
+      - "8080:8080"            # REST, WebSocket, WebUI
+    depends_on:
+      - mediamtx
+      - qdrant
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # RTSP server: the simulator publishes annotated streams; browsers watch them via WebRTC.
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.1
+    restart: unless-stopped
+    ports:
+      - "8554:8554"            # RTSP
+      - "8889:8889"            # WebRTC (WebUI live view)
+      - "8189:8189/udp"        # WebRTC ICE
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  simulator_db:
+  simulator_logs:
+  qdrant_data:

@@ -1,0 +1,28 @@
+# Formatting is fully automatic: run `scripts/dev.sh scripts/format.sh`. Requires clang-format 14+.
+---
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++17
+ColumnLimit: 100
+IndentWidth: 4
+AccessModifierOffset: -4
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Inline
+BreakBeforeBraces: Attach
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # C++ standard library: <vector>, <cstdint>
+  - Regex: '^<[a-z_0-9]+>$'
+    Priority: 1
+  # Third-party: <spdlog/spdlog.h>, <yaml-cpp/yaml.h>
+  - Regex: '^<.*>$'
+    Priority: 2
+  # Project headers, always written from src/: "domain/scene/gate.hpp"
+  - Regex: '^".*"$'
+    Priority: 3
+...
