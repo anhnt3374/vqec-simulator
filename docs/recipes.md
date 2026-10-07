@@ -81,3 +81,19 @@ conditionals live in bootstrap factory functions such as `create_inference_engin
 1. Add `db/migrations/NNNN_<description>.sql` (next number). Never edit an applied migration.
 2. Use the portable SQL subset (see the header of `0001_initial_schema.sql`).
 3. Update the repository adapters and their integration tests in the same change.
+
+## Build an employee recognition gallery
+
+Follow README's Docker model preparation and `vqec_face_gallery` commands. Mount employee
+photos read-only, use directory names as IDs, and keep output in ignored data/. Reject multiple
+faces, incompatible model/preprocessing metadata and non-normalized vectors. Verify enabled
+startup with `vqec_live_ai --config <local-config> --check-config` in Docker. Recognition events
+are logged, not persisted, and a new person track can generate another log for the same employee.
+
+## Batch feature extractor contract
+
+`IFeatureExtractor::extract_batch` borrows immutable source pixels for a synchronous thread-safe
+call with 1..4 FeatureRegions (source-pixel box and optional 5-point landmarks). Its outer Result
+reports frame/batch validation or inference errors. An EmbeddingBatch preserves region order
+including per-region InvalidArgument crop failures. EdgeFace's single-box extract cannot align
+a face and returns InvalidArgument; callers supply landmarks through extract_batch.

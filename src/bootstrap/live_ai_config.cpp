@@ -232,6 +232,62 @@ Result<LiveAiConfig> parse_live_ai_config(const std::string& yaml) {
                 options.max_tracks = static_cast<std::size_t>(capacity);
             }
         }
+        key = "recognition";
+        if (root[key]) {
+            const auto node = root[key];
+            require(node.IsMap(), key);
+            if (node["enabled"])
+                config.recognition_enabled = node["enabled"].as<bool>();
+            if (node["gallery"])
+                config.gallery_path =
+                    expand_environment(node["gallery"].as<std::string>(), "recognition.gallery");
+            if (node["model"])
+                config.recognition_model = node["model"].as<std::string>();
+            auto& policy = config.recognition;
+            for (const auto& field : std::initializer_list<std::pair<const char*, float*>>{
+                     {"minimum_width", &policy.minimum_width},
+                     {"minimum_height", &policy.minimum_height},
+                     {"minimum_area", &policy.minimum_area},
+                     {"match_threshold", &policy.match_threshold},
+                     {"minimum_gap", &policy.minimum_gap}}) {
+                key = std::string("recognition.") + field.first;
+                if (node[field.first])
+                    *field.second = node[field.first].as<float>();
+                require(std::isfinite(*field.second) && *field.second >= 0, key);
+            }
+            require(policy.minimum_width > 0 && policy.minimum_width <= 8192,
+                    "recognition.minimum_width");
+            require(policy.minimum_height > 0 && policy.minimum_height <= 8192,
+                    "recognition.minimum_height");
+            require(policy.minimum_area > 0 && policy.minimum_area <= 8192.0F * 8192.0F,
+                    "recognition.minimum_area");
+            require(policy.match_threshold <= 1, "recognition.match_threshold");
+            require(policy.minimum_gap <= 1, "recognition.minimum_gap");
+            key = "recognition.max_batch";
+            if (node["max_batch"]) {
+                int v = node["max_batch"].as<int>();
+                require(v >= 1 && v <= 4, key);
+                policy.max_batch = static_cast<std::size_t>(v);
+            }
+            key = "recognition.max_tracks";
+            if (node["max_tracks"]) {
+                int v = node["max_tracks"].as<int>();
+                require(v >= 1 && v <= 4096, key);
+                policy.max_tracks = static_cast<std::size_t>(v);
+            }
+            key = "recognition.refresh_interval_ms";
+            if (node["refresh_interval_ms"])
+                policy.refresh_interval =
+                    std::chrono::milliseconds(node["refresh_interval_ms"].as<int>());
+            require(policy.refresh_interval >= std::chrono::milliseconds(100) &&
+                        policy.refresh_interval <= std::chrono::seconds(60),
+                    key);
+            if (config.recognition_enabled) {
+                require(!config.gallery_path.empty(), "recognition.gallery");
+                require(config.recognition_model == "edgeface_s_gamma_05_batch4.onnx",
+                        "recognition.model");
+            }
+        }
         key = "logging";
         if (root[key]) {
             if (root[key]["level"])
@@ -257,6 +313,10 @@ Result<LiveAiConfig> load_live_ai_config(const std::filesystem::path& path) {
     return parse_live_ai_config(contents.str());
 }
 
+Status verify_edgeface_model(const std::filesystem::path& path) {
+    return verify_artifact(path,
+                           "d01def8073f64e47c215545b5727d5807a9324ad18f9d83e269dbd9068f2140e");
+}
 Status verify_live_ai_models(const std::filesystem::path& models_dir) {
     const auto person =
         verify_artifact(models_dir / "nanodet_plus_m_320.onnx",

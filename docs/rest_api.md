@@ -157,3 +157,23 @@ inside does not repeat the log. A first confirmed observation inside counts as e
 Lost tracks retain membership; absent tracks are forgotten. Zone edits/deletes and
 source reconnect reset membership and dwell timers. Entry logs remain immediate.
 No database/event publication is used yet.
+
+### Recognition and attendance logs (prototype)
+
+`face_recognition.recognized` is currently an AI-worker log, not a REST response or a
+persisted event. Fields include employee_id, person_track_id, stream, frame_sequence, pts_ms,
+occurred_at_utc_ms, score, optional second_score/gap and confirmation (clear_gap/two_observations).
+It occurs on new confirmed employee identity per person track. Cached frames and same-identity
+refreshes do not emit again. New track IDs may emit again; this is not daily attendance deduplication.
+
+`attendance.line_crossed` is also a frame event and AI-worker log, with no new REST endpoint,
+DB write or external publisher. It is emitted on each `forward` (inside-to-outside) live-line
+crossing with an already confirmed employee identity. Fields: `employee_id`, `person_track_id`,
+`line_id` (the event's `gate_id`), `direction`, `frame_sequence`, `pts_ms`,
+`occurred_at_utc_ms` and stream. The source crossing's gate, track, frame and wall-clock timestamp
+are preserved. It accompanies `line_crossing.cross`; merely recognizing a face does not emit
+attendance. Unknown crossings are not queued for later recognition; no daily deduplication.
+
+`FrameAnnotations.employee_ids` is an internal owned track-ID-to-employee-code snapshot for
+video sinks, not a REST field. Recognized boxes show only the employee code; unknown boxes keep
+`person #<track_id>`. Scores are never rendered on any bounding box, irrespective of highlights.

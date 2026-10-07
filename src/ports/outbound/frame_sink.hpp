@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "common/result.hpp"
@@ -23,6 +25,9 @@ struct FrameAnnotations {
     // Visible confirmed people inside for the configured dwell time. Red takes precedence.
     // Owned snapshot, safe for queued sinks.
     std::vector<domain::TrackId> inside_zone_tracks = {};
+    // Confirmed employee identities for visible person tracks; empty for unknown/disabled.
+    // Owned frame snapshot, safe to copy into a sink's bounded publication queue.
+    std::map<domain::TrackId, std::string> employee_ids = {};
 };
 
 // Video output: annotated RTSP push, MP4 recording, preview. One instance per stream output,

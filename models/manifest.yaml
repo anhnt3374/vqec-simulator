@@ -40,3 +40,14 @@ models:
     license: MIT
     artifacts:
       onnxruntime: {file: live_ai/yunet_2023mar.onnx, sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"}
+
+  - id: edgeface_s_gamma_05_v1
+    task: embedding
+    input: {batch: 4, width: 112, height: 112, layout: nchw, color: rgb, dtype: float32}
+    normalize: {mean: [0.5, 0.5, 0.5], std: [0.5, 0.5, 0.5], pixel_scale: 0.00392156862745098}
+    alignment: {landmarks: 5, method: similarity, max_residual_px: 12, complete_crop: true}
+    output: {shape: [4, 512], l2_normalized: true}
+    source: https://github.com/otroshi/edgeface/tree/ce86851cfc37979a9cd2558598d0e9bc592cbba3
+    checkpoint_sha256: dc59abda2e8580399fd115a1eeb07e1f21156196db604b884407bcf0f17efb07
+    artifacts:
+      onnxruntime: {file: live_ai/edgeface_s_gamma_05_batch4.onnx, sha256: "d01def8073f64e47c215545b5727d5807a9324ad18f9d83e269dbd9068f2140e"}

@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -23,6 +24,39 @@ struct CapturedFrame {
     domain::Frame frame;
     std::uint64_t session = 0;
 };
+struct EmbeddingJob {
+    domain::Frame frame;
+    std::uint64_t session;
+    std::vector<FaceRecognitionRequest> requests;
+};
+struct EmbeddingResult {
+    std::uint64_t sequence, session;
+    Result<ports::EmbeddingBatch> embeddings;
+};
+constexpr std::size_t kEmbeddingQueueCapacity = 2;
+constexpr std::uint64_t kEmbeddingWarningInterval = 100;
+void embed_worker(ports::IFeatureExtractor& extractor, BoundedQueue<EmbeddingJob>& jobs,
+                  BoundedQueue<EmbeddingResult>& results) {
+    try {
+        while (auto job = jobs.pop()) {
+            auto embedded = [&]() -> Result<ports::EmbeddingBatch> {
+                try {
+                    std::vector<ports::FeatureRegion> regions;
+                    for (const auto& request : job->requests)
+                        regions.push_back(request.region);
+                    return extractor.extract_batch(job->frame, regions);
+                } catch (...) {
+                    return make_error(ErrorCode::Internal, "embedding worker exception");
+                }
+            }();
+            if (!results.push({job->frame.sequence, job->session, std::move(embedded)}))
+                break;
+        }
+    } catch (...) {
+        jobs.close();
+    }
+    results.close();
+}
 struct DetectorResult {
     std::uint64_t sequence;
     Result<std::vector<domain::Detection>> detections;
@@ -76,14 +110,18 @@ LiveAiPipeline::LiveAiPipeline(domain::StreamId stream_id,
                                std::shared_ptr<ports::IObjectDetector> person,
                                std::shared_ptr<ports::IObjectDetector> face,
                                std::unique_ptr<ports::IFrameSink> sink, LiveAiOptions options,
-                               std::unique_ptr<ports::IObjectTracker> person_tracker)
+                               std::unique_ptr<ports::IObjectTracker> person_tracker,
+                               std::shared_ptr<ports::IFeatureExtractor> extractor,
+                               std::vector<domain::FaceGallerySample> gallery)
     : stream_id_(std::move(stream_id)),
       source_(std::move(source)),
       person_(std::move(person)),
       face_(std::move(face)),
       sink_(std::move(sink)),
       options_(options),
-      person_tracker_(std::move(person_tracker)) {
+      person_tracker_(std::move(person_tracker)),
+      extractor_(std::move(extractor)),
+      gallery_(std::move(gallery)) {
     assert(source_ && person_ && face_ && sink_ && options_.queue_capacity > 0);
 }
 
@@ -120,12 +158,19 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
         face_jobs(1, OverflowPolicy::Block);
     BoundedQueue<DetectorResult> person_results(1, OverflowPolicy::Block),
         face_results(1, OverflowPolicy::Block);
+    BoundedQueue<EmbeddingJob> embedding_jobs(kEmbeddingQueueCapacity, OverflowPolicy::Block);
+    BoundedQueue<EmbeddingResult> embedding_results(kEmbeddingQueueCapacity, OverflowPolicy::Block);
+    FaceRecognition recognition(options_.recognition, gallery_);
+    std::uint64_t embedding_count = 0, embedding_failures = 0, recognized_count = 0;
+    std::uint64_t batch_failures = 0;
+    std::map<ErrorCode, std::uint64_t> region_failures;
     std::atomic<bool> cancelled{false};
     std::atomic<std::uint64_t> capture_count{0};
+    std::atomic<std::uint64_t> source_session{0};
     std::optional<Error> capture_error;  // Read only after capture thread joins.
     std::mutex reconnect_mutex;
     std::condition_variable reconnect_ready;
-    std::thread person_thread, face_thread, capture_thread;
+    std::thread person_thread, face_thread, embedding_thread, capture_thread;
     auto shutdown = [&] {
         cancelled.store(true);
         reconnect_ready.notify_all();
@@ -134,8 +179,12 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
         face_jobs.close();
         person_results.close();
         face_results.close();
+        embedding_jobs.close();
+        embedding_results.close();
         if (capture_thread.joinable())
             capture_thread.join();
+        if (embedding_thread.joinable())
+            embedding_thread.join();
         if (face_thread.joinable())
             face_thread.join();
         if (person_thread.joinable())
@@ -147,6 +196,9 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
     try {
         person_thread = std::thread([&] { detect_worker(*person_, person_jobs, person_results); });
         face_thread = std::thread([&] { detect_worker(*face_, face_jobs, face_results); });
+        if (extractor_)
+            embedding_thread =
+                std::thread([&] { embed_worker(*extractor_, embedding_jobs, embedding_results); });
         capture_thread = std::thread([&] {
             try {
                 std::uint64_t sequence = 0, session = 0;
@@ -160,6 +212,8 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
                             capture_error = frame.error();
                             break;
                         }
+                        // Invalidate queued and in-flight work before releasing the source.
+                        source_session.store(++session);
                         source_->close();
                         VQEC_LOG_WARN("[stream={}] source reconnect code={} message={}", stream_id_,
                                       to_string(frame.error().code), frame.error().message);
@@ -177,7 +231,6 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
                             const auto reconnected = source_->open();
                             ++attempts;
                             if (reconnected.ok()) {
-                                ++session;
                                 VQEC_LOG_INFO("[stream={}] source reconnected attempts={}",
                                               stream_id_, attempts);
                                 break;
@@ -209,8 +262,8 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
         });
         VQEC_LOG_INFO(
             "[stream={}] AI pipeline opened person=nanodet_plus_m_320 face=yunet_2023mar "
-            "processing_fps={} simulation_ai_fps={} parallel_workers=2",
-            stream_id_, options_.processing_fps, options_.simulation_ai_fps);
+            "processing_fps={} simulation_ai_fps={} parallel_workers={}",
+            stream_id_, options_.processing_fps, options_.simulation_ai_fps, extractor_ ? 3 : 2);
         FrameAdmission admission(options_.processing_fps);
         std::uint64_t active_session = 0;
         std::optional<std::chrono::nanoseconds> previous_pts;
@@ -226,6 +279,8 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
             auto captured_frame = captured.pop();
             if (!captured_frame)
                 break;
+            if (captured_frame->session != source_session.load())
+                continue;
             auto* frame = &captured_frame->frame;
             if (captured_frame->session != active_session ||
                 (previous_pts && frame->pts < *previous_pts)) {
@@ -233,6 +288,7 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
                     person_tracker_->reset();
                 line_monitor.reset();
                 zone_monitor.reset();
+                recognition.reset();
                 admission = FrameAdmission(options_.processing_fps);
                 active_session = captured_frame->session;
             }
@@ -310,16 +366,102 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
                                                   detection.class_id, detection.label,
                                                   detection.score});
             tracking_time += Clock::now() - tracking_start;
-            for (const auto& detection : face->detections.value())
-                annotations.tracks.push_back({0, domain::TrackState::Tentative, detection.box,
-                                              detection.class_id, detection.label,
-                                              detection.score});
+            if (extractor_) {
+                auto requests =
+                    recognition.select(*frame, annotations.tracks, face->detections.value());
+                if (!requests.empty()) {
+                    embedding_count += requests.size();
+                    if (!embedding_jobs.push({*frame, active_session, requests})) {
+                        status = make_error(ErrorCode::Internal, "embedding worker stopped");
+                        break;
+                    }
+                    auto embedded = embedding_results.pop();
+                    if (!embedded || embedded->sequence != frame->sequence ||
+                        embedded->session != active_session) {
+                        status = make_error(ErrorCode::Internal,
+                                            "embedding result frame/session mismatch");
+                        break;
+                    }
+                    if (stop_requested.load())
+                        break;
+                    if (source_session.load() != active_session)
+                        continue;
+                    if (embedded->embeddings.ok()) {
+                        std::size_t region_index = 0;
+                        for (const auto& output : embedded->embeddings.value()) {
+                            if (!output.ok()) {
+                                ++embedding_failures;
+                                const auto count = ++region_failures[output.error().code];
+                                if (count == 1 || count % kEmbeddingWarningInterval == 0)
+                                    VQEC_LOG_WARN(
+                                        "[stream={}] embedding region rejected "
+                                        "failures_for_code={} "
+                                        "person_track_id={} code={} message={}",
+                                        stream_id_, count,
+                                        region_index < requests.size()
+                                            ? requests[region_index].track_id
+                                            : 0,
+                                        to_string(output.error().code), output.error().message);
+                            }
+                            ++region_index;
+                        }
+                        auto events =
+                            recognition.apply(*frame, requests, embedded->embeddings.value());
+                        recognized_count += events.size();
+                        for (auto& event : events)
+                            annotations.events.push_back(std::move(event));
+                    } else {
+                        ++embedding_failures;
+                        ++batch_failures;
+                        ports::EmbeddingBatch failed;
+                        for (std::size_t i = 0; i < requests.size(); ++i)
+                            failed.emplace_back(embedded->embeddings.error());
+                        recognition.apply(*frame, requests, failed);
+                        if (batch_failures == 1 || batch_failures % kEmbeddingWarningInterval == 0)
+                            VQEC_LOG_WARN(
+                                "[stream={}] embedding failed failures={} code={} message={}",
+                                stream_id_, batch_failures,
+                                to_string(embedded->embeddings.error().code),
+                                embedded->embeddings.error().message);
+                    }
+                }
+            }
+            if (stop_requested.load())
+                break;
+            if (source_session.load() != active_session)
+                continue;
             line_monitor.annotate(*frame, annotations);
             zone_monitor.annotate(*frame, annotations);
+            recognition.annotate(*frame, annotations);
             for (const auto& event : annotations.events) {
                 const auto utc_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                         event.occurred_at.time_since_epoch())
                                         .count();
+                if (event.type == FaceRecognition::kAttendanceEvent) {
+                    VQEC_LOG_INFO(
+                        "[stream={}] event={} employee_id={} person_track_id={} line_id={} "
+                        "direction={} frame_sequence={} pts_ms={} occurred_at_utc_ms={}",
+                        stream_id_, event.type,
+                        event.attributes.at(FaceRecognition::kEmployeeIdAttribute),
+                        event.track_id.value_or(0), event.gate_id.value_or(""),
+                        event.attributes.at("direction"), event.frame_sequence,
+                        event.attributes.at("pts_ms"), utc_ms);
+                    continue;
+                }
+                if (event.type == FaceRecognition::kRecognizedEvent) {
+                    VQEC_LOG_INFO(
+                        "[stream={}] event={} employee_id={} person_track_id={} score={} "
+                        "second_score={} gap={} confirmation={} frame_sequence={} pts_ms={} "
+                        "occurred_at_utc_ms={}",
+                        stream_id_, event.type, event.attributes.at("employee_id"),
+                        event.track_id.value_or(0), event.attributes.at("score"),
+                        event.attributes.count("second_score") ? event.attributes.at("second_score")
+                                                               : "none",
+                        event.attributes.count("gap") ? event.attributes.at("gap") : "none",
+                        event.attributes.at("confirmation"), event.frame_sequence,
+                        event.attributes.at("pts_ms"), utc_ms);
+                    continue;
+                }
                 VQEC_LOG_INFO(
                     "[stream={}] event={} gate={} zone={} track={} direction={} "
                     "frame_sequence={} occurred_at_utc_ms={}",
@@ -354,6 +496,13 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
             ++processed;
             const auto now = Clock::now();
             if (now - window_start >= options_.stats_interval) {
+                if (extractor_)
+                    VQEC_LOG_INFO(
+                        "[stream={}] recognition_stats embedding_faces={} embedding_failures={} "
+                        "recognized={} source_rejected={} unowned={} deferred={}",
+                        stream_id_, embedding_count, embedding_failures, recognized_count,
+                        recognition.stats().source_rejected, recognition.stats().unowned,
+                        recognition.stats().deferred);
                 const double seconds = std::chrono::duration<double>(now - window_start).count();
                 const auto count = capture_count.load();
                 const auto drops = captured.dropped_count();

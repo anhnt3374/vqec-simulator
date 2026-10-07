@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -41,7 +39,7 @@ Result<std::shared_ptr<domain::ImageBuffer>> render_overlay(
         const float scale_x = static_cast<float>(width) / static_cast<float>(frame.width);
         const float scale_y = static_cast<float>(height) / static_cast<float>(frame.height);
         for (const auto& track : annotations.tracks) {
-            if (track.state == domain::TrackState::Lost)
+            if (track.state == domain::TrackState::Lost || track.label == "face")
                 continue;
             const auto& box = track.box;
             if (!std::isfinite(box.x) || !std::isfinite(box.y) || !std::isfinite(box.width) ||
@@ -65,17 +63,19 @@ Result<std::shared_ptr<domain::ImageBuffer>> render_overlay(
                                      std::find(annotations.inside_zone_tracks.begin(),
                                                annotations.inside_zone_tracks.end(),
                                                track.id) != annotations.inside_zone_tracks.end();
-            const cv::Scalar color = outward                 ? cv::Scalar(0, 0, 255)
-                                     : inside_zone           ? kZoneColor
-                                     : track.label == "face" ? cv::Scalar(255, 128, 255)
-                                                             : cv::Scalar(80, 255, 0);
+            const cv::Scalar color = outward       ? cv::Scalar(0, 0, 255)
+                                     : inside_zone ? kZoneColor
+                                                   : cv::Scalar(80, 255, 0);
             cv::rectangle(canvas, cv::Point(x1, y1), cv::Point(x2, y2), color, kLineWidth);
-            std::ostringstream label;
-            label << track.label;
-            if (track.label == "person" && track.id > 0)
-                label << " #" << track.id;
-            label << ' ' << std::fixed << std::setprecision(2) << track.score;
-            cv::putText(canvas, label.str(), cv::Point(x1, std::max(15, y1 - 5)),
+            std::string label = track.label;
+            if (track.label == "person") {
+                const auto employee = annotations.employee_ids.find(track.id);
+                if (employee != annotations.employee_ids.end() && !employee->second.empty())
+                    label = employee->second;
+                else if (track.id > 0)
+                    label += " #" + std::to_string(track.id);
+            }
+            cv::putText(canvas, label, cv::Point(x1, std::max(15, y1 - 5)),
                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, color, 1);
         }
         if (annotations.scene) {

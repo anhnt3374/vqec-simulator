@@ -74,6 +74,7 @@ services:
       - live-line:/run/vqec:ro
       - ${LIVE_AI_CONFIG:-../config/live_ai.example.yaml}:/etc/vqec/live_ai.yaml:ro
       - ../models:/opt/vqec/models:ro
+      - ../data:/opt/vqec/data:ro
     logging: *logs
 
 # Atomic backend → AI-worker configuration IPC, kept in RAM and reset on backend startup.

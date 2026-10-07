@@ -165,3 +165,25 @@ RUN npm ci
 COPY web/ ./
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+# Offline EdgeFace model export tooling; not installed in development/runtime stages.
+FROM ${UBUNTU_IMAGE} AS edgeface-export
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ARG EDGEFACE_TORCH_VERSION=2.2.2+cpu
+ARG EDGEFACE_TORCHVISION_VERSION=0.17.2+cpu
+ARG EDGEFACE_TIMM_VERSION=0.9.12
+ARG EDGEFACE_ONNX_VERSION=1.16.1
+ARG EDGEFACE_ORT_VERSION=1.18.1
+ARG EDGEFACE_NUMPY_VERSION=1.26.4
+RUN pip3 install --no-cache-dir torch==${EDGEFACE_TORCH_VERSION} torchvision==${EDGEFACE_TORCHVISION_VERSION} \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+    && pip3 install --no-cache-dir timm==${EDGEFACE_TIMM_VERSION} onnx==${EDGEFACE_ONNX_VERSION} \
+        onnxruntime==${EDGEFACE_ORT_VERSION} numpy==${EDGEFACE_NUMPY_VERSION}
+ARG EDGEFACE_COMMIT=ce86851cfc37979a9cd2558598d0e9bc592cbba3
+RUN git clone https://github.com/otroshi/edgeface.git /opt/edgeface \
+    && git -C /opt/edgeface checkout ${EDGEFACE_COMMIT} \
+    && curl -fsSL https://huggingface.co/Idiap/EdgeFace-S-GAMMA/resolve/a1c171036159e94bd4c766088370a37d0899d31f/edgeface_s_gamma_05.pt \
+        -o /opt/edgeface_s_gamma_05.pt
+WORKDIR /workspace

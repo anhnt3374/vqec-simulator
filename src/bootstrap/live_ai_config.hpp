@@ -5,6 +5,7 @@
 #include <string>
 
 #include "adapters/outbound/tracking/bytetrack/byte_tracker.hpp"
+#include "application/recognition/face_recognition.hpp"
 #include "common/log.hpp"
 #include "common/result.hpp"
 
@@ -33,12 +34,17 @@ struct LiveAiConfig {
     LiveDetectorConfig face;
     adapters::bytetrack::ByteTrackerOptions tracking;
     log::LogConfig logging;
+    bool recognition_enabled = false;
+    std::string recognition_model = "edgeface_s_gamma_05_batch4.onnx";
+    std::string gallery_path;
+    app::FaceRecognitionOptions recognition;
 };
 
 // Bootstrap only: env expansion and YAML validation. Errors identify keys, never values.
 Result<LiveAiConfig> parse_live_ai_config(const std::string& yaml);
 Result<LiveAiConfig> load_live_ai_config(const std::filesystem::path& path);
 // Verifies both pinned artifacts using SHA256 from the tracked preparation metadata.
+Status verify_edgeface_model(const std::filesystem::path& path);
 Status verify_live_ai_models(const std::filesystem::path& models_dir);
 
 }  // namespace vqec::bootstrap

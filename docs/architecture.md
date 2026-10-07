@@ -95,10 +95,24 @@ thread: XYAH Kalman prediction and global IoU/score assignment for high scores,
 then IoU assignment of remaining active tracks to low scores. Tentative tracks
 require a second match except on the first frame. Lost tracks can be reacquired
 before the PTS-based timeout, but their prediction boxes are hidden in the overlay.
-Person labels include monotonically increasing IDs; these identify tracks within
-one worker lifetime, not recognized people. A source session marker travels in
+Unknown person labels include monotonically increasing IDs; these identify tracks within
+one worker lifetime. Recognized person labels show the confirmed employee code instead.
+No bounding box label displays a score. A source session marker travels in
 the capture queue so reconnect resets associations even if PTS does not rewind.
-The face branch uses frame-local Tentative annotations with ID zero.
+The face branch supplies source-pixel five-point landmarks to recognition and is hidden in video.
+Optional EdgeFace recognition associates each face with one confirmed person's head region;
+ambiguous ownership is rejected. A joined bounded embedding worker runs a fixed batch-4 tensor,
+padding unused rows for 1..3 faces. Bootstrap loads a validated model-specific employee gallery
+once; gallery matching ranks distinct employee IDs by their best normalized sample score.
+A qualifying clear-gap match confirms immediately; a near tie or identity change requires two
+consistent observations. Missing ownership interrupts votes, Lost retains cache and expiry/
+reconnect clears state. Logs contain employee_id and person_track_id, never embedding values.
+Recognition failures degrade while person tracking and line/zone logic continue. Application
+snapshots confirmed employee codes into `FrameAnnotations.employee_ids`, an owned map safe for
+the queued sink; renderer keeps `Track.label` as the semantic class. After the live line monitor,
+recognition attributes each forward crossing with a known employee as `attendance.line_crossed`.
+No event is created for unknown crossings or retrospectively after later recognition.
+Attendance persistence remains deferred. See ADRs 0008 and 0009.
 
 Temporary live-line control is provided by an optional bootstrap watcher over a shared
 Docker tmpfs snapshot (`LIVE_LINE_FILE`). The NestJS backend writes validated normalized gate

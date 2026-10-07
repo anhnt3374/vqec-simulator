@@ -16,6 +16,7 @@ configure_file(build_info.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/bootstrap
 add_library(vqec_bootstrap
     app_config.cpp
     live_ai_config.cpp
+    face_gallery_io.cpp
     live_line_bridge.cpp
     solution_factory.cpp)
 target_include_directories(vqec_bootstrap PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -29,6 +30,12 @@ vqec_set_warnings(vqec_simulator)
 install(TARGETS vqec_simulator RUNTIME DESTINATION bin)
 
 if(VQEC_WITH_FFMPEG AND VQEC_WITH_ONNXRUNTIME AND VQEC_WITH_BYTETRACK)
+    find_package(OpenCV REQUIRED COMPONENTS core imgcodecs)
+    add_executable(vqec_face_gallery face_gallery_main.cpp)
+    target_include_directories(vqec_face_gallery SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(vqec_face_gallery PRIVATE vqec_bootstrap vqec_onnxruntime vqec_detection_models ${OpenCV_LIBS})
+    vqec_set_warnings(vqec_face_gallery)
+    install(TARGETS vqec_face_gallery RUNTIME DESTINATION bin)
     add_executable(vqec_live_ai live_ai_main.cpp)
     target_link_libraries(vqec_live_ai PRIVATE vqec_bootstrap vqec_ffmpeg vqec_onnxruntime vqec_detection_models vqec_bytetrack)
     vqec_set_warnings(vqec_live_ai)

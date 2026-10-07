@@ -185,5 +185,68 @@ v0.1 scaffold: domain (geometry, zones, gates, events), ports, stream pipeline, 
 solutions (`zone_intrusion`, `line_crossing`), config loading, logging, tests, Docker images.
 The independent NestJS API and React Gốc/AI live view use MediaMTX. The CPU live
 AI worker implements FFmpeg RTSP capture/publication, ONNX Runtime, NanoDet and
-YuNet, plus ByteTrack person tracking. GPU execution, embeddings/recognition,
+YuNet, ByteTrack person tracking and optional EdgeFace employee recognition. GPU execution,
 face tracking and the remaining production adapters are future work.
+
+### Employee face recognition (EdgeFace)
+
+Face recognition associates a usable face with one confirmed person track. Only person boxes
+are displayed. Logs contain `face_recognition.recognized`, `employee_id`, `person_track_id`,
+score, distinct-employee runner-up/gap, confirmation path and UTC time. A clear match confirms
+in one observation; a near tie needs the same employee twice. Leaving/losing face ownership
+interrupts a pending vote. Confirmed employee codes are retained on the person track and shown
+instead of `person #<id>`; unknown people keep that track label. Box labels never display a score,
+including normal, line-crossing and zone highlights. Expiry/reconnect clears cached identity.
+Each outward crossing of the configured line by a recognized person also emits
+`attendance.line_crossed` with employee ID, person track ID, line ID, direction and UTC time.
+Unrecognized crossings do not emit attendance and are not replayed after later recognition.
+Logs are track-scoped, not daily attendance records.
+
+Prepare the original EdgeFace-S gamma 0.5 model (genuine batch tensor of 4, padding unused rows):
+
+```bash
+docker build -f docker/Dockerfile --target edgeface-export -t vqec-edgeface-export .
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" vqec-edgeface-export \
+  python3 tools/prepare_edgeface.py --source /opt/edgeface \
+  --checkpoint /opt/edgeface_s_gamma_05.pt --output models/live_ai/edgeface_s_gamma_05_batch4.onnx
+scripts/dev.sh cmake --preset cpu-debug
+scripts/dev.sh cmake --build --preset cpu-debug
+```
+
+Build a fresh gallery from `<employee_id>/<photo>` directories using the exact same YuNet,
+five-point similarity alignment, RGB preprocessing and L2-normalized EdgeFace embeddings:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" \
+  -v "$HOME/Pictures/employees:/employees:ro" -w /workspace vqec-simulator-dev:cpu \
+  build/cpu-debug/src/bootstrap/vqec_face_gallery --images /employees \
+  --models-dir models/live_ai --output data/face_gallery.edgeface.yaml
+```
+
+The builder reports skipped images and employees without usable samples. It rejects images
+with multiple faces and saves at most 12 samples per employee. Generated galleries/models
+are local ignored files. A gallery from ArcFace or another model/preprocessing is rejected.
+
+Verify startup without connecting to the camera (the log directory is a temporary mount):
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace \
+  -v "$PWD/models:/opt/vqec/models:ro" -v "$PWD/data:/opt/vqec/data:ro" \
+  --tmpfs "/var/log/vqec:uid=$(id -u),gid=$(id -g),mode=0755" vqec-simulator-dev:cpu \
+  build/cpu-debug/src/bootstrap/vqec_live_ai \
+  --config config/live_ai.recognition.example.yaml --check-config
+```
+
+Enable the supplied recognition example when recreating your stack:
+
+```bash
+LIVE_AI_CONFIG=../config/live_ai.recognition.example.yaml \
+  docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml up -d --build ai-worker web
+docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml logs -f ai-worker
+```
+
+Alternatively set `recognition.enabled: true` and the gallery path in your existing local
+config to preserve its processing/stream settings. Both Compose recipes mount `data/` read-only
+at `/opt/vqec/data`. The 0.41 match threshold and 0.08 gap are initial reference policy values;
+calibrate them against live EdgeFace data before drawing accuracy conclusions. Cached identities
+refresh every 2 seconds; conflicting identities need two fresh consistent observations.

@@ -29,3 +29,9 @@ For real-model integration fixtures, run
 ignored. Run `scripts/dev.sh ctest --preset cpu-debug-integration`. Set
 `VQEC_TEST_RTSP_URL` inside the Docker container to additionally verify a live
 RTSP stream; unavailable fixtures/streams are explicitly skipped.
+
+EdgeFace-S gamma 0.5 uses the original pinned checkpoint and FP32 GELU graph. See README
+for the Docker `edgeface-export` target and tools/prepare_edgeface.py. Artifact input is
+[4,3,112,112] RGB normalized to [-1,1], output [4,512]; the codec L2-normalizes each result
+and pads/discards unused rows. Gallery and live use identical 5-point similarity alignment.
+The tracked export metadata records checkpoint/artifact hashes and verified batch counts.

@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "adapters/outbound/inference/models/edgeface_extractor.hpp"
 #include "adapters/outbound/inference/models/nanodet_detector.hpp"
 #include "adapters/outbound/inference/models/yunet_detector.hpp"
 #include "adapters/outbound/inference/runtimes/onnxruntime/onnx_runtime_engine.hpp"
@@ -14,6 +15,7 @@
 #include "adapters/outbound/media/ffmpeg/ffmpeg_frame_source.hpp"
 #include "adapters/outbound/tracking/bytetrack/byte_tracker.hpp"
 #include "application/pipeline/live_ai_pipeline.hpp"
+#include "bootstrap/face_gallery_io.hpp"
 #include "bootstrap/live_ai_config.hpp"
 #include "bootstrap/live_line_bridge.hpp"
 #include "common/log.hpp"
@@ -95,6 +97,33 @@ int run(int argc, char** argv) {
                           vqec::to_string(error.code), error.message);
         return kExitUnavailable;
     }
+    std::shared_ptr<vqec::ports::IFeatureExtractor> extractor;
+    std::vector<vqec::domain::FaceGallerySample> gallery;
+    if (config.recognition_enabled) {
+        status = vqec::bootstrap::verify_edgeface_model(std::filesystem::path(config.models_dir) /
+                                                        config.recognition_model);
+        if (!status.ok()) {
+            VQEC_LOG_CRITICAL(
+                "[bootstrap] recognition.model verification failed code={} message={}",
+                vqec::to_string(status.error().code), status.error().message);
+            return kExitUnavailable;
+        }
+        auto embed_engine = load_engine(config.recognition_model.c_str(), 1);
+        auto loaded_gallery = vqec::bootstrap::load_face_gallery(config.gallery_path);
+        if (!embed_engine.ok() || !loaded_gallery.ok()) {
+            const auto& error = !embed_engine.ok() ? embed_engine.error() : loaded_gallery.error();
+            VQEC_LOG_CRITICAL("[bootstrap] recognition startup failed code={} message={}",
+                              vqec::to_string(error.code), error.message);
+            return kExitUnavailable;
+        }
+        extractor = std::make_shared<inference::EdgeFaceExtractor>(std::move(embed_engine).value());
+        gallery = std::move(loaded_gallery).value();
+        VQEC_LOG_INFO(
+            "[bootstrap] recognition enabled model=edgeface_s_gamma_05_v1 gallery_samples={} "
+            "max_batch={} match_threshold={} minimum_gap={} refresh_ms={}",
+            gallery.size(), config.recognition.max_batch, config.recognition.match_threshold,
+            config.recognition.minimum_gap, config.recognition.refresh_interval.count());
+    }
     if (check_only) {
         VQEC_LOG_INFO("[bootstrap] configuration and pretrained model loads verified");
         return 0;
@@ -118,8 +147,9 @@ int run(int argc, char** argv) {
     vqec::app::LiveAiPipeline pipeline(
         "board43", std::move(source), person, face, std::move(sink),
         {config.processing_fps, config.queue_capacity, config.stats_interval,
-         config.simulation_ai_fps, config.zone_dwell_time},
-        std::make_unique<vqec::adapters::bytetrack::ByteTracker>(config.tracking));
+         config.simulation_ai_fps, config.zone_dwell_time, config.recognition},
+        std::make_unique<vqec::adapters::bytetrack::ByteTracker>(config.tracking), extractor,
+        std::move(gallery));
     {
         const char* line_file = std::getenv("LIVE_LINE_FILE");
         vqec::bootstrap::LiveLineBridge bridge(line_file ? line_file : "", pipeline);

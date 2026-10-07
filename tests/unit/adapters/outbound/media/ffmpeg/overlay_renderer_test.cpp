@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 namespace vqec::test {
-TEST(OverlayRenderer, DrawsBothLabelsWithoutMutatingSharedPixels) {
+TEST(OverlayRenderer, DrawsPersonAndHidesFaceWithoutMutatingSharedPixels) {
     auto pixels = std::make_shared<domain::ImageBuffer>();
     pixels->width = 100;
     pixels->height = 100;
@@ -24,8 +24,8 @@ TEST(OverlayRenderer, DrawsBothLabelsWithoutMutatingSharedPixels) {
     const auto person_pixel = static_cast<std::size_t>(50 * 300 + 10 * 3);
     const auto face_pixel = static_cast<std::size_t>(50 * 300 + 60 * 3);
     EXPECT_NE(result.value()->data[person_pixel + 1], 0);
-    EXPECT_NE(result.value()->data[face_pixel + 2], 0);
-    EXPECT_NE(result.value()->data[person_pixel + 2], result.value()->data[face_pixel + 2]);
+    EXPECT_EQ(result.value()->data[face_pixel + 2], 0);
+    EXPECT_EQ(result.value()->data[face_pixel + 1], 0);
 }
 
 TEST(OverlayRenderer, AcceptsNoDetectionsAndResizesOutput) {
@@ -105,8 +105,8 @@ TEST(OverlayRenderer, ColorsOnlyOutwardCrossedPeopleRedAndDrawsConfiguredLine) {
     EXPECT_EQ(data[person + 2], 255);
     EXPECT_EQ(data[other + 1], 255);
     EXPECT_EQ(data[other + 2], 0);
-    EXPECT_EQ(data[face], 255);
-    EXPECT_EQ(data[face + 2], 255);
+    EXPECT_EQ(data[face], 0);
+    EXPECT_EQ(data[face + 2], 0);
     const std::size_t line = 34 * 600 + 50 * 3;
     EXPECT_EQ(data[line], 255);
     EXPECT_EQ(data[line + 1], 255);
@@ -114,7 +114,7 @@ TEST(OverlayRenderer, ColorsOnlyOutwardCrossedPeopleRedAndDrawsConfiguredLine) {
     EXPECT_EQ(pixels->data, std::vector<std::uint8_t>(60000, 0));
 }
 
-TEST(OverlayRenderer, ColorsZoneMembersOrangeWithRedPriorityAndPreservesFaceColor) {
+TEST(OverlayRenderer, ColorsZoneMembersOrangeWithRedPriorityAndHidesFaces) {
     auto pixels = std::make_shared<domain::ImageBuffer>();
     pixels->width = 200;
     pixels->height = 100;
@@ -151,8 +151,8 @@ TEST(OverlayRenderer, ColorsZoneMembersOrangeWithRedPriorityAndPreservesFaceColo
     EXPECT_EQ(data[orange], 0);
     EXPECT_EQ(data[orange + 1], 165);
     EXPECT_EQ(data[orange + 2], 255);
-    EXPECT_EQ(data[face], 255);
-    EXPECT_EQ(data[face + 2], 255);
+    EXPECT_EQ(data[face], 0);
+    EXPECT_EQ(data[face + 2], 0);
     EXPECT_EQ(data[outside + 1], 255);
     EXPECT_EQ(data[outside + 2], 0);
     EXPECT_EQ(data[zone + 1], 165);
@@ -160,4 +160,65 @@ TEST(OverlayRenderer, ColorsZoneMembersOrangeWithRedPriorityAndPreservesFaceColo
     EXPECT_EQ(pixels->data, std::vector<std::uint8_t>(60000, 0));
 }
 
+}  // namespace vqec::test
+
+namespace vqec::test {
+TEST(OverlayRenderer, NeverDisplaysScoreOnNormalOrHighlightedBoxes) {
+    auto pixels = std::make_shared<domain::ImageBuffer>();
+    pixels->width = 300;
+    pixels->height = 120;
+    pixels->stride_bytes = 900;
+    pixels->data.resize(108000, 0);
+    domain::Frame frame;
+    frame.width = 300;
+    frame.height = 120;
+    frame.image = pixels;
+    for (const auto& label : {"person", "car"}) {
+        for (int highlight = 0; highlight < 3; ++highlight) {
+            ports::FrameAnnotations annotations;
+            annotations.tracks = {
+                {42, domain::TrackState::Confirmed, {10, 60, 60, 40}, 0, label, 0.91F}};
+            if (highlight == 1)
+                annotations.outward_crossed_tracks = {42};
+            if (highlight == 2)
+                annotations.inside_zone_tracks = {42};
+            auto first = adapters::ffmpeg::render_overlay(frame, annotations, 300, 120);
+            annotations.tracks[0].score = 0.13F;
+            auto second = adapters::ffmpeg::render_overlay(frame, annotations, 300, 120);
+            ASSERT_TRUE(first.ok());
+            ASSERT_TRUE(second.ok());
+            EXPECT_EQ(first.value()->data, second.value()->data)
+                << label << " highlight=" << highlight;
+        }
+    }
+}
+}  // namespace vqec::test
+namespace vqec::test {
+TEST(OverlayRenderer, DisplaysOnlyEmployeeCodeForRecognizedPerson) {
+    auto pixels = std::make_shared<domain::ImageBuffer>();
+    pixels->width = 300;
+    pixels->height = 120;
+    pixels->stride_bytes = 900;
+    pixels->data.resize(108000, 0);
+    domain::Frame frame;
+    frame.width = 300;
+    frame.height = 120;
+    frame.image = pixels;
+    ports::FrameAnnotations recognized;
+    recognized.tracks = {{42, domain::TrackState::Confirmed, {10, 60, 60, 40}, 0, "person", .91F}};
+    recognized.employee_ids.emplace(42, "TECH0001");
+    auto actual = adapters::ffmpeg::render_overlay(frame, recognized, 300, 120);
+    ports::FrameAnnotations expected;
+    expected.tracks = recognized.tracks;
+    expected.tracks[0].label = "TECH0001";
+    expected.tracks[0].id = 0;
+    auto reference = adapters::ffmpeg::render_overlay(frame, expected, 300, 120);
+    ASSERT_TRUE(actual.ok());
+    ASSERT_TRUE(reference.ok());
+    EXPECT_EQ(actual.value()->data, reference.value()->data);
+    recognized.employee_ids.clear();
+    auto unknown = adapters::ffmpeg::render_overlay(frame, recognized, 300, 120);
+    ASSERT_TRUE(unknown.ok());
+    EXPECT_NE(actual.value()->data, unknown.value()->data);
+}
 }  // namespace vqec::test

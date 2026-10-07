@@ -1,0 +1,49 @@
+# CPU baseline: edit a local copy and restart ai-worker to change the admission rate.
+input_uri: rtsp://mediamtx:8554/relay
+output_uri: rtsp://mediamtx:8554/ai
+models_dir: /opt/vqec/models/live_ai
+processing_fps: 0                 # 0 = unlimited; examples: 5, 10, 15, 20, 30
+output: {width: 1280, height: 720, fps: 15} # encoder nominal FPS; does not duplicate frames
+person: {confidence: 0.35, nms_iou: 0.5, num_threads: 1}
+face: {confidence: 0.35, nms_iou: 0.5, num_threads: 1}
+queue_capacity: 2
+io_timeout_ms: 10000
+stats_interval_seconds: 10
+# Person bbox turns orange after this stream-time dwell inside the temporary zone (1..3600).
+zone_dwell_seconds: 5
+logging: {level: info, directory: /var/log/vqec}
+
+# ByteTrack: low-score detections preserve tracks; only new_threshold starts IDs.
+# NanoDet effective confidence is min(person.confidence, tracking.low_threshold).
+tracking:
+  low_threshold: 0.1
+  high_threshold: 0.35
+  new_threshold: 0.45
+  match_cost: 0.8
+  low_match_cost: 0.5
+  tentative_match_cost: 0.7
+  lost_timeout_ms: 1000
+  max_tracks: 128
+
+# Emulate AI + tracking occupying at least 1/ai_fps seconds per frame.
+# Keep processing_fps: 0 for throughput simulation. 0 disables, otherwise 1..1000.
+simulation:
+  ai_fps: 0
+
+# Optional temporary line and zone control from the WebUI: set LIVE_LINE_FILE in the worker
+# environment to the backend's shared tmpfs snapshot path (see compose.live_view.yaml).
+# The compose stack sets /run/vqec/live-line.json for both services.
+
+# Enable after preparing EdgeFace and building the employee gallery (see README).
+recognition:
+  enabled: true
+  model: edgeface_s_gamma_05_batch4.onnx
+  gallery: /opt/vqec/data/face_gallery.edgeface.yaml
+  minimum_width: 20
+  minimum_height: 25
+  minimum_area: 500
+  max_batch: 4
+  match_threshold: 0.41
+  minimum_gap: 0.08
+  refresh_interval_ms: 2000
+  max_tracks: 512

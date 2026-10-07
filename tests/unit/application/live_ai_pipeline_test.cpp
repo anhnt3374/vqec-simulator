@@ -1,11 +1,13 @@
 #include "application/pipeline/live_ai_pipeline.hpp"
 
+#include <algorithm>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
 
 #include <gtest/gtest.h>
 
+#include "fakes/fake_feature_extractor.hpp"
 #include "fakes/fake_frame_source.hpp"
 #include "fakes/fake_object_detector.hpp"
 #include "fakes/fake_object_tracker.hpp"
@@ -18,6 +20,7 @@ struct Gate {
     std::mutex mutex;
     std::condition_variable ready;
     int entered = 0;
+    std::vector<std::uint64_t> sequences;
 };
 class PairedDetector final : public ports::IObjectDetector {
 public:
@@ -26,6 +29,7 @@ public:
     Result<std::vector<domain::Detection>> detect(const domain::Frame& frame) override {
         {
             std::unique_lock<std::mutex> lock(gate_->mutex);
+            gate_->sequences.push_back(frame.sequence);
             ++gate_->entered;
             gate_->ready.notify_all();
             if (!gate_->ready.wait_for(lock, std::chrono::seconds(2),
@@ -75,7 +79,7 @@ TEST(FrameAdmission, LimitsProcessingByPtsAndResetsAfterReconnect) {
     EXPECT_TRUE(unlimited.admit(std::chrono::milliseconds(0)));
 }
 
-TEST(LiveAiPipeline, DispatchesBothDetectorsConcurrentlyAndMergesSameFrame) {
+TEST(LiveAiPipeline, DispatchesBothDetectorsConcurrentlyForSameFrameAndHidesFaces) {
     auto gate = std::make_shared<Gate>();
     auto record = std::make_shared<RecordingFrameSink::Record>();
     domain::Frame frame;
@@ -90,10 +94,11 @@ TEST(LiveAiPipeline, DispatchesBothDetectorsConcurrentlyAndMergesSameFrame) {
     const std::atomic<bool> stop{false};
     EXPECT_TRUE(pipeline.run(stop).ok());
     ASSERT_EQ(record->writes.size(), 1U);
-    ASSERT_EQ(record->writes[0].tracks.size(), 2U);
+    ASSERT_EQ(record->writes[0].tracks.size(), 1U);
     EXPECT_EQ(record->writes[0].tracks[0].label, "person");
-    EXPECT_EQ(record->writes[0].tracks[1].label, "face");
-    EXPECT_EQ(record->writes[0].tracks[0].box.x, record->writes[0].tracks[1].box.x);
+
+    EXPECT_EQ(gate->sequences, (std::vector<std::uint64_t>{0, 0}));
+    EXPECT_EQ(record->writes[0].tracks[0].box.x, 0);
     EXPECT_TRUE(record->closed);
 }
 
@@ -145,7 +150,7 @@ TEST(LiveAiPipeline, ShutsDownAtEofWithoutDispatchWhenSourceIsEmpty) {
     EXPECT_TRUE(record->closed);
 }
 
-TEST(LiveAiPipeline, UsesPersonTrackerIdsAndKeepsFacesFrameLocal) {
+TEST(LiveAiPipeline, UsesPersonTrackerIdsWithoutFaceAnnotations) {
     auto gate = std::make_shared<Gate>();
     auto record = std::make_shared<RecordingFrameSink::Record>();
     domain::Track tracked{42, domain::TrackState::Confirmed, {10, 10, 20, 20}, 0, "person", 0.9F};
@@ -158,10 +163,8 @@ TEST(LiveAiPipeline, UsesPersonTrackerIdsAndKeepsFacesFrameLocal) {
     const std::atomic<bool> stop{false};
     ASSERT_TRUE(pipeline.run(stop).ok());
     ASSERT_EQ(record->writes.size(), 1U);
-    ASSERT_EQ(record->writes[0].tracks.size(), 2U);
+    ASSERT_EQ(record->writes[0].tracks.size(), 1U);
     EXPECT_EQ(record->writes[0].tracks[0].id, 42U);
-    EXPECT_EQ(record->writes[0].tracks[1].id, 0U);
-    EXPECT_EQ(record->writes[0].tracks[1].label, "face");
 }
 
 TEST(LiveAiPipeline, ResetsTrackerAndAdmissionWhenSourcePtsRewinds) {
@@ -270,4 +273,266 @@ TEST(LiveAiPipeline, ZoneAndGateEditsPreserveEachOthersHistoryAndScene) {
     EXPECT_EQ(record->writes[4].scene->gates.size(), 1U);
 }
 
+namespace {
+class RecognitionFaceDetector final : public ports::IObjectDetector {
+public:
+    Result<std::vector<domain::Detection>> detect(const domain::Frame&) override {
+        return std::vector<domain::Detection>{
+            {{20, 20, 50, 60}, 0, "face", 0.9F, std::array<domain::Point2f, 5>{}}};
+    }
+    const std::vector<std::string>& labels() const override {
+        static const std::vector<std::string> names{"face"};
+        return names;
+    }
+};
+}  // namespace
+TEST(LiveAiPipeline, RecognizesOnJoinedWorkerAndLogsOnceWithoutFaceBoxes) {
+    auto record = std::make_shared<RecordingFrameSink::Record>();
+    auto extractor = std::make_shared<FakeFeatureExtractor>();
+    auto t = make_track(7, 0.5F, 0.5F);
+    t.box = {0, 0, 200, 400};
+    std::vector<float> values(512, 0);
+    values[0] = 1;
+    app::LiveAiPipeline pipeline(
+        "test",
+        std::make_unique<FakeFrameSource>(std::deque<domain::Frame>{make_frame(1), make_frame(2)}),
+        std::make_shared<FakeObjectDetector>(), std::make_shared<RecognitionFaceDetector>(),
+        std::make_unique<RecordingFrameSink>(record), {},
+        std::make_unique<FakeObjectTracker>(std::deque<std::vector<domain::Track>>{{t}, {t}}),
+        extractor,
+        std::vector<domain::FaceGallerySample>{{"TECH1", {"edgeface_s_gamma_05_v1", values}}});
+    const std::atomic<bool> stop{false};
+    ASSERT_TRUE(pipeline.run(stop).ok());
+    ASSERT_EQ(record->writes.size(), 2U);
+    ASSERT_EQ(record->writes[0].events.size(), 1U);
+    EXPECT_EQ(record->writes[0].events[0].attributes.at("employee_id"), "TECH1");
+    EXPECT_TRUE(record->writes[1].events.empty());
+    EXPECT_EQ(record->writes[0].tracks.size(), 1U);
+    EXPECT_NE(extractor->worker, std::this_thread::get_id());
+    EXPECT_EQ(extractor->calls, 1U);
+}
+}  // namespace vqec::test
+namespace vqec::test {
+TEST(LiveAiPipeline, EmbeddingFailureDoesNotStopVideoOrLineAnalytics) {
+    auto record = std::make_shared<RecordingFrameSink::Record>();
+    auto extractor = std::make_shared<FakeFeatureExtractor>();
+    extractor->fail = true;
+    auto t = make_track(7, 0.5F, 0.5F);
+    t.box = {0, 0, 200, 400};
+    std::vector<float> values(512, 0);
+    values[0] = 1;
+    app::LiveAiPipeline pipeline(
+        "test",
+        std::make_unique<FakeFrameSource>(std::deque<domain::Frame>{make_frame(1), make_frame(2)}),
+        std::make_shared<FakeObjectDetector>(), std::make_shared<RecognitionFaceDetector>(),
+        std::make_unique<RecordingFrameSink>(record), {},
+        std::make_unique<FakeObjectTracker>(std::deque<std::vector<domain::Track>>{{t}, {t}}),
+        extractor,
+        std::vector<domain::FaceGallerySample>{{"TECH1", {"edgeface_s_gamma_05_v1", values}}});
+    pipeline.request_gate_update(make_middle_gate());
+    const std::atomic<bool> stop{false};
+    ASSERT_TRUE(pipeline.run(stop).ok());
+    ASSERT_EQ(record->writes.size(), 2U);
+    EXPECT_EQ(extractor->calls, 2U);
+    EXPECT_TRUE(record->writes[0].events.empty());
+    EXPECT_EQ(record->writes[1].scene->gates.size(), 1U);
+}
+}  // namespace vqec::test
+namespace vqec::test {
+namespace {
+class BlockingExtractor final : public ports::IFeatureExtractor {
+public:
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool entered = false, released = false;
+    Result<domain::Embedding> extract(const domain::Frame&, const domain::BoxF&) override {
+        return make_error(ErrorCode::Unsupported, "use batch");
+    }
+    Result<ports::EmbeddingBatch> extract_batch(const domain::Frame&,
+                                                const std::vector<ports::FeatureRegion>&) override {
+        std::unique_lock<std::mutex> lock(mutex);
+        entered = true;
+        ready.notify_all();
+        ready.wait(lock, [&] { return released; });
+        std::vector<float> values(512, 0);
+        values[0] = 1;
+        return ports::EmbeddingBatch{domain::Embedding{"edgeface_s_gamma_05_v1", values}};
+    }
+};
+}  // namespace
+TEST(LiveAiPipeline, StopDuringEmbeddingJoinsWorkerAndDiscardsResult) {
+    auto record = std::make_shared<RecordingFrameSink::Record>();
+    auto extractor = std::make_shared<BlockingExtractor>();
+    auto t = make_track(7, 0.5F, 0.5F);
+    t.box = {0, 0, 200, 400};
+    std::vector<float> values(512, 0);
+    values[0] = 1;
+    app::LiveAiPipeline pipeline(
+        "test", std::make_unique<FakeFrameSource>(std::deque<domain::Frame>{make_frame(1)}),
+        std::make_shared<FakeObjectDetector>(), std::make_shared<RecognitionFaceDetector>(),
+        std::make_unique<RecordingFrameSink>(record), {},
+        std::make_unique<FakeObjectTracker>(std::deque<std::vector<domain::Track>>{{t}}), extractor,
+        std::vector<domain::FaceGallerySample>{{"TECH1", {"edgeface_s_gamma_05_v1", values}}});
+    std::atomic<bool> stop{false};
+    Status result;
+    ::testing::internal::CaptureStdout();
+    std::thread execution([&] { result = pipeline.run(stop); });
+    bool entered = false;
+    {
+        std::unique_lock<std::mutex> lock(extractor->mutex);
+        entered = extractor->ready.wait_for(lock, std::chrono::seconds(2),
+                                            [&] { return extractor->entered; });
+        stop.store(true);
+        extractor->released = true;
+        extractor->ready.notify_all();
+    }
+    execution.join();
+    const auto logs = ::testing::internal::GetCapturedStdout();
+    EXPECT_EQ(logs.find("event=face_recognition.recognized"), std::string::npos);
+    EXPECT_TRUE(entered);
+    EXPECT_TRUE(result.ok());
+    EXPECT_TRUE(record->writes.empty());
+}
+}  // namespace vqec::test
+
+namespace vqec::test {
+namespace {
+class ReconnectingRecognitionSource final : public ports::IFrameSource {
+public:
+    explicit ReconnectingRecognitionSource(std::shared_ptr<BlockingExtractor> extractor)
+        : extractor_(std::move(extractor)) {}
+    Status open() override {
+        ++opens_;
+        return {};
+    }
+    ports::SourceInfo info() const override { return {"fake://live", 1000, 1000, 25.0, true}; }
+    Result<domain::Frame> read() override {
+        if (opens_ > 1)
+            return make_error(ErrorCode::EndOfStream, "done");
+        if (!sent_) {
+            sent_ = true;
+            return make_frame(1);
+        }
+        std::unique_lock<std::mutex> lock(extractor_->mutex);
+        extractor_->ready.wait(lock, [&] { return extractor_->entered; });
+        return make_error(ErrorCode::Unavailable, "scripted disconnect");
+    }
+    void close() override {
+        std::lock_guard<std::mutex> lock(extractor_->mutex);
+        extractor_->released = true;
+        extractor_->ready.notify_all();
+    }
+
+private:
+    std::shared_ptr<BlockingExtractor> extractor_;
+    unsigned opens_ = 0;
+    bool sent_ = false;
+};
+}  // namespace
+TEST(LiveAiPipeline, ReconnectDuringEmbeddingDiscardsPreviousSessionAttendance) {
+    auto record = std::make_shared<RecordingFrameSink::Record>();
+    auto extractor = std::make_shared<BlockingExtractor>();
+    auto t = make_track(7, 0.5F, 0.5F);
+    t.box = {0, 0, 200, 400};
+    std::vector<float> values(512, 0);
+    values[0] = 1;
+    app::LiveAiPipeline pipeline(
+        "test", std::make_unique<ReconnectingRecognitionSource>(extractor),
+        std::make_shared<FakeObjectDetector>(), std::make_shared<RecognitionFaceDetector>(),
+        std::make_unique<RecordingFrameSink>(record), {},
+        std::make_unique<FakeObjectTracker>(std::deque<std::vector<domain::Track>>{{t}}), extractor,
+        std::vector<domain::FaceGallerySample>{{"TECH1", {"edgeface_s_gamma_05_v1", values}}});
+    const std::atomic<bool> stop{false};
+    ::testing::internal::CaptureStdout();
+    const auto result = pipeline.run(stop);
+    const auto logs = ::testing::internal::GetCapturedStdout();
+    EXPECT_TRUE(result.ok());
+    EXPECT_EQ(logs.find("event=face_recognition.recognized"), std::string::npos);
+    EXPECT_TRUE(record->writes.empty());
+}
+}  // namespace vqec::test
+
+namespace vqec::test {
+namespace {
+class FailingRegionsExtractor final : public ports::IFeatureExtractor {
+public:
+    Result<domain::Embedding> extract(const domain::Frame&, const domain::BoxF&) override {
+        return make_error(ErrorCode::Unsupported, "use batch");
+    }
+    Result<ports::EmbeddingBatch> extract_batch(const domain::Frame&,
+                                                const std::vector<ports::FeatureRegion>&) override {
+        if (++calls_ == 1)
+            return ports::EmbeddingBatch{
+                make_error(ErrorCode::InvalidArgument, "alignment rejected")};
+        return make_error(ErrorCode::Internal, "inference failed");
+    }
+
+private:
+    unsigned calls_ = 0;
+};
+}  // namespace
+TEST(LiveAiPipeline, LogsFirstRegionAndBatchFailureWithSeparateCounters) {
+    auto record = std::make_shared<RecordingFrameSink::Record>();
+    auto t = make_track(7, 0.5F, 0.5F);
+    t.box = {0, 0, 200, 400};
+    std::vector<float> values(512, 0);
+    values[0] = 1;
+    app::LiveAiPipeline pipeline(
+        "test",
+        std::make_unique<FakeFrameSource>(std::deque<domain::Frame>{make_frame(1), make_frame(2)}),
+        std::make_shared<FakeObjectDetector>(), std::make_shared<RecognitionFaceDetector>(),
+        std::make_unique<RecordingFrameSink>(record), {},
+        std::make_unique<FakeObjectTracker>(std::deque<std::vector<domain::Track>>{{t}, {t}}),
+        std::make_shared<FailingRegionsExtractor>(),
+        std::vector<domain::FaceGallerySample>{{"TECH1", {"edgeface_s_gamma_05_v1", values}}});
+    const std::atomic<bool> stop{false};
+    ::testing::internal::CaptureStdout();
+    const auto result = pipeline.run(stop);
+    const auto logs = ::testing::internal::GetCapturedStdout();
+    EXPECT_TRUE(result.ok());
+    EXPECT_NE(logs.find("code=invalid_argument message=alignment rejected"), std::string::npos);
+    EXPECT_NE(logs.find("code=internal message=inference failed"), std::string::npos);
+    EXPECT_EQ(record->writes.size(), 2U);
+}
+}  // namespace vqec::test
+
+namespace vqec::test {
+TEST(LiveAiPipeline, EmitsAttendanceOnlyOnOutwardCrossingWithConfirmedEmployee) {
+    auto record = std::make_shared<RecordingFrameSink::Record>();
+    auto extractor = std::make_shared<FakeFeatureExtractor>();
+    auto inside = make_track(7, 0.5F, 0.4F);
+    inside.box = {0, 0, 1000, 400};
+    auto outside = inside;
+    outside.box.height = 600;
+    std::vector<float> values(512, 0);
+    values[0] = 1;
+    app::LiveAiPipeline pipeline(
+        "test",
+        std::make_unique<FakeFrameSource>(std::deque<domain::Frame>{
+            make_frame(0), make_frame(1), make_frame(2), make_frame(3), make_frame(4)}),
+        std::make_shared<FakeObjectDetector>(), std::make_shared<RecognitionFaceDetector>(),
+        std::make_unique<RecordingFrameSink>(record), {},
+        std::make_unique<FakeObjectTracker>(std::deque<std::vector<domain::Track>>{
+            {inside}, {outside}, {outside}, {inside}, {outside}}),
+        extractor,
+        std::vector<domain::FaceGallerySample>{{"TECH1", {"edgeface_s_gamma_05_v1", values}}});
+    pipeline.request_gate_update(make_middle_gate());
+    const std::atomic<bool> stop{false};
+    ASSERT_TRUE(pipeline.run(stop).ok());
+    ASSERT_EQ(record->writes.size(), 5U);
+    for (const auto index : {1U, 4U}) {
+        const auto& events = record->writes[index].events;
+        const auto attendance = std::find_if(events.begin(), events.end(), [](const auto& event) {
+            return event.type == "attendance.line_crossed";
+        });
+        ASSERT_NE(attendance, events.end());
+        EXPECT_EQ(attendance->attributes.at("employee_id"), "TECH1");
+        EXPECT_EQ(attendance->track_id, 7U);
+        EXPECT_EQ(attendance->gate_id, make_middle_gate().id);
+        EXPECT_EQ(attendance->frame_sequence, index);
+    }
+    for (const auto index : {0U, 2U, 3U})
+        for (const auto& event : record->writes[index].events)
+            EXPECT_NE(event.type, "attendance.line_crossed");
+}
 }  // namespace vqec::test

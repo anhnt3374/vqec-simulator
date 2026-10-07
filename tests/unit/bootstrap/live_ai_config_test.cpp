@@ -92,4 +92,22 @@ TEST(LiveAiConfig, DefaultsZoneDwellToFiveSecondsAndValidatesOverrides) {
         EXPECT_NE(bad.error().message.find("zone_dwell_seconds"), std::string::npos);
     }
 }
+TEST(LiveAiConfig, ValidatesRecognitionConfiguration) {
+    auto defaults = bootstrap::parse_live_ai_config(kConfig);
+    ASSERT_TRUE(defaults.ok());
+    EXPECT_FALSE(defaults.value().recognition_enabled);
+    auto enabled = bootstrap::parse_live_ai_config(
+        kConfig + "recognition: {enabled: true, gallery: /gallery.yaml}\n");
+    ASSERT_TRUE(enabled.ok());
+    EXPECT_TRUE(enabled.value().recognition_enabled);
+    EXPECT_EQ(enabled.value().recognition.max_batch, 4U);
+    for (const auto* setting :
+         {"enabled: true", "max_batch: 5", "match_threshold: .nan", "minimum_width: 0",
+          "minimum_width: 8193", "minimum_height: 0", "minimum_area: 0", "max_batch: 0",
+          "minimum_gap: -0.1", "minimum_gap: 1.1", "match_threshold: 1.1",
+          "refresh_interval_ms: 99", "refresh_interval_ms: 60001", "max_tracks: 4097",
+          "refresh_interval_ms: 0", "max_tracks: -1"})
+        EXPECT_FALSE(
+            bootstrap::parse_live_ai_config(kConfig + "recognition: {" + setting + "}\n").ok());
+}
 }  // namespace vqec::test

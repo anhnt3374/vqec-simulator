@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 
+#include "application/recognition/face_recognition.hpp"
 #include "ports/outbound/frame_sink.hpp"
 #include "ports/outbound/object_detector.hpp"
 #include "ports/outbound/object_tracker.hpp"
@@ -17,6 +18,7 @@ struct LiveAiOptions {
     std::chrono::seconds stats_interval{10};
     double simulation_ai_fps = 0.0;
     std::chrono::seconds zone_dwell_time{5};
+    FaceRecognitionOptions recognition{};
 };
 
 // Single coordinator-thread admission. PTS resets are treated as a fresh source session.
@@ -39,7 +41,9 @@ public:
                    std::shared_ptr<ports::IObjectDetector> person,
                    std::shared_ptr<ports::IObjectDetector> face,
                    std::unique_ptr<ports::IFrameSink> sink, LiveAiOptions options = {},
-                   std::unique_ptr<ports::IObjectTracker> person_tracker = {});
+                   std::unique_ptr<ports::IObjectTracker> person_tracker = {},
+                   std::shared_ptr<ports::IFeatureExtractor> extractor = {},
+                   std::vector<domain::FaceGallerySample> gallery = {});
     // Thread-safe latest-update mailbox. Non-blocking except for the short mailbox lock;
     // validated gates are applied by the coordinator between frames. nullopt clears the gate.
     void request_gate_update(std::optional<domain::Gate> gate);
@@ -60,5 +64,7 @@ private:
     std::unique_ptr<ports::IFrameSink> sink_;
     LiveAiOptions options_;
     std::unique_ptr<ports::IObjectTracker> person_tracker_;
+    std::shared_ptr<ports::IFeatureExtractor> extractor_;
+    std::vector<domain::FaceGallerySample> gallery_;
 };
 }  // namespace vqec::app

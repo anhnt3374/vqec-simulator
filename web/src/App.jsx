@@ -83,7 +83,7 @@ function MainContent({ mode, set_mode }) {
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M12 8v14"></path><path d="M8 12h8"></path></svg>
               Luồng AI (AI Overlay View)
-              <span className="badge">Person + Face</span>
+              <span className="badge">Person + Recognition</span>
             </button>
           </div>
           <div className="actions">
@@ -172,7 +172,7 @@ function MainContent({ mode, set_mode }) {
             </button>
           </div>
           <div className="frame-stats">
-            <span className="highlight-cyan">{mode === 'ai' ? 'Luồng AI · Person + Face' : 'Luồng Gốc'}</span>
+            <span className="highlight-cyan">{mode === 'ai' ? 'Luồng AI · Person + Recognition' : 'Luồng Gốc'}</span>
           </div>
         </div>
       </div>

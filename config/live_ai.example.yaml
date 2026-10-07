@@ -33,3 +33,17 @@ simulation:
 # Optional temporary line and zone control from the WebUI: set LIVE_LINE_FILE in the worker
 # environment to the backend's shared tmpfs snapshot path (see compose.live_view.yaml).
 # The compose stack sets /run/vqec/live-line.json for both services.
+
+# Enable after preparing EdgeFace and building the employee gallery (see README).
+recognition:
+  enabled: false
+  model: edgeface_s_gamma_05_batch4.onnx
+  gallery: /opt/vqec/data/face_gallery.edgeface.yaml
+  minimum_width: 20
+  minimum_height: 25
+  minimum_area: 500
+  max_batch: 4
+  match_threshold: 0.41
+  minimum_gap: 0.08
+  refresh_interval_ms: 2000
+  max_tracks: 512

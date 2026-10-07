@@ -1,5 +1,6 @@
 # Use cases: stream pipeline, solutions, services implementing inbound ports.
 add_library(vqec_application
+    recognition/face_recognition.cpp
     pipeline/stream_pipeline.cpp
     pipeline/live_ai_pipeline.cpp
     pipeline/live_line_monitor.cpp

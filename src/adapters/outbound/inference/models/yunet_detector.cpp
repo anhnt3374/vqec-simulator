@@ -84,6 +84,17 @@ Result<std::vector<domain::Detection>> decode_yunet(const std::vector<Tensor>& o
                      0,
                      "face",
                      score});
+                std::array<domain::Point2f, 5> landmarks{};
+                for (std::size_t landmark = 0; landmark < landmarks.size(); ++landmark) {
+                    const float lx = float_at(*kps, index * 10 + landmark * 2);
+                    const float ly = float_at(*kps, index * 10 + landmark * 2 + 1);
+                    if (!std::isfinite(lx) || !std::isfinite(ly))
+                        return make_error(ErrorCode::InvalidArgument, "yunet: nonfinite landmark");
+                    landmarks[landmark] = {
+                        (static_cast<float>(x) + lx) * static_cast<float>(stride) * scale_x,
+                        (static_cast<float>(y) + ly) * static_cast<float>(stride) * scale_y};
+                }
+                detections.back().landmarks = landmarks;
             }
         }
     }

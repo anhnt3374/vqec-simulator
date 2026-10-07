@@ -5,15 +5,18 @@ include(GoogleTest)
 add_executable(vqec_unit_tests
     unit/adapters/outbound/inference/tensor_test.cpp
     unit/adapters/outbound/inference/models/detectors_test.cpp
+    unit/adapters/outbound/inference/models/edgeface_extractor_test.cpp
     unit/application/line_crossing_solution_test.cpp
     unit/application/stream_pipeline_test.cpp
     unit/application/live_line_monitor_test.cpp
     unit/application/live_zone_monitor_test.cpp
     unit/application/live_ai_pipeline_test.cpp
     unit/application/ai_simulation_budget_test.cpp
+    unit/application/recognition/face_recognition_test.cpp
     unit/application/zone_intrusion_solution_test.cpp
     unit/bootstrap/app_config_test.cpp
     unit/bootstrap/live_ai_config_test.cpp
+    unit/bootstrap/face_gallery_io_test.cpp
     unit/bootstrap/live_line_bridge_test.cpp
     unit/common/bounded_queue_test.cpp
     unit/common/uri_test.cpp
@@ -44,7 +47,7 @@ gtest_discover_tests(vqec_unit_tests PROPERTIES LABELS unit)
 
 if(VQEC_WITH_FFMPEG AND VQEC_WITH_ONNXRUNTIME)
     find_package(OpenCV REQUIRED COMPONENTS core imgcodecs)
-    add_executable(vqec_live_ai_integration_tests integration/inference/live_ai_models_test.cpp)
+    add_executable(vqec_live_ai_integration_tests integration/inference/live_ai_models_test.cpp integration/inference/edgeface_model_test.cpp integration/bootstrap/face_gallery_io_test.cpp)
     target_include_directories(vqec_live_ai_integration_tests SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
     target_compile_definitions(vqec_live_ai_integration_tests PRIVATE VQEC_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
     target_link_libraries(vqec_live_ai_integration_tests PRIVATE vqec_bootstrap vqec_detection_models vqec_onnxruntime vqec_ffmpeg GTest::gtest_main ${OpenCV_LIBS})

@@ -69,6 +69,9 @@ TEST(YuNetDecode, CombinesObjectnessAndClassScoreAndMapsFaceBox) {
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(result.value().size(), 1U);
     EXPECT_EQ(result.value()[0].label, "face");
+    ASSERT_TRUE(result.value()[0].landmarks);
+    EXPECT_FLOAT_EQ(result.value()[0].landmarks->at(0).x, 160.0F);
+    EXPECT_FLOAT_EQ(result.value()[0].landmarks->at(0).y, 80.0F);
     EXPECT_NEAR(result.value()[0].score, 0.9F, 0.001F);
     EXPECT_NEAR(result.value()[0].box.x, 128.0F, 0.01F);
     EXPECT_NEAR(result.value()[0].box.y, 64.0F, 0.01F);

@@ -1,5 +1,7 @@
 # Pure business model: no I/O, no threads, no third-party dependencies.
 add_library(vqec_domain
+    vision/face_gallery.cpp
+    vision/face_association.cpp
     geometry/box.cpp
     geometry/polygon.cpp
     scene/gate.cpp
