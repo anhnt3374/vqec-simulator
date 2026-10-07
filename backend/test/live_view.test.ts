@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { LiveViewService } from '../src/live_view.service.js';
 
 test('returns raw browser playback metadata with the configured public host', () => {
@@ -23,4 +23,19 @@ test('preserves a reverse-proxy base path', () => {
 test('rejects unknown stream IDs', () => {
   const service = new LiveViewService({ port: 3000, player_base_url: 'http://host:8889', cors_origins: [] });
   assert.throws(() => service.get_live_view('unknown'), NotFoundException);
+});
+
+test('returns AI player metadata while preserving the public proxy base path', () => {
+  const service = new LiveViewService({ port: 3000, player_base_url: 'https://video.example.com/media', cors_origins: [] });
+  assert.deepEqual(service.get_live_view('board43', 'ai'), {
+    stream_id: 'board43', mode: 'ai', protocol: 'webrtc', player_url: 'https://video.example.com/media/ai',
+  });
+  assert.equal(service.get_live_view('board43', 'raw').mode, 'raw');
+});
+
+test('rejects unsupported and repeated mode values', () => {
+  const service = new LiveViewService({ port: 3000, player_base_url: 'http://host:8889', cors_origins: [] });
+  for (const mode of ['other', '', ['raw', 'ai'], null]) {
+    assert.throws(() => service.get_live_view('board43', mode), BadRequestException);
+  }
 });

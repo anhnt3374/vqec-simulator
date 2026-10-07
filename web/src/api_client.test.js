@@ -65,3 +65,18 @@ test('supports cancellation of an in-flight API request', async () => {
     await assert.rejects(pending, { name: 'AbortError' });
   });
 });
+
+test('requests AI metadata and rejects a stale raw response', async () => {
+  let request_url;
+  const ai_dto = { ...dto, mode: 'ai', player_url: 'http://192.168.138.217:8889/ai' };
+  await with_server((request, response) => {
+    request_url = request.url;
+    response.end(JSON.stringify(ai_dto));
+  }, async base_url => {
+    assert.deepEqual(await fetch_live_view({ base_url, mode: 'ai' }), ai_dto);
+    assert.equal(request_url, '/api/v1/streams/board43/live-view?mode=ai');
+  });
+  await with_server((request, response) => response.end(JSON.stringify(dto)), async base_url => {
+    await assert.rejects(fetch_live_view({ base_url, mode: 'ai' }), /metadata/i);
+  });
+});

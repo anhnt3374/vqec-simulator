@@ -1,6 +1,6 @@
 # REST and WebSocket API
 
-Status: NestJS implements health and raw live-view metadata. Other endpoints below
+Status: NestJS implements health and raw/AI live-view metadata. Other endpoints below
 remain draft contracts for the C++ processing service. Change this document before changing code.
 
 ## Conventions
@@ -63,6 +63,12 @@ as an iframe with autoplay permission. It is independent of request Host headers
 It does not return a source URI, credentials, FPS or camera availability. A 200
 response confirms the configuration exists; it does not confirm media delivery.
 Player connection errors are displayed by MediaMTX's built-in player.
+
+The optional query `mode=raw|ai` selects the output. Omitted mode defaults to
+`raw` and preserves the response above. `?mode=ai` returns `mode: "ai"` and
+`player_url: "http://192.168.138.217:8889/ai"`; protocol remains `webrtc`.
+Unknown or repeated mode values return HTTP 400 with `invalid_argument`.
+AI metadata does not guarantee that the AI worker is publishing video.
 
 An unknown stream returns HTTP 404:
 

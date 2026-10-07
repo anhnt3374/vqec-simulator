@@ -1,0 +1,23 @@
+# Add the AI worker to an existing live-view composition, using that composition's network.
+# docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml up -d --build
+# Paths here are relative to the first Compose file's directory (config/ in the example).
+services:
+  ai-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: live-ai-runtime
+      args:
+        TARGET_RUNTIME: cpu
+    restart: unless-stopped
+    init: true
+    depends_on:
+      - mediamtx
+    volumes:
+      - ${LIVE_AI_CONFIG:-../config/live_ai.example.yaml}:/etc/vqec/live_ai.yaml:ro
+      - ../models:/opt/vqec/models:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

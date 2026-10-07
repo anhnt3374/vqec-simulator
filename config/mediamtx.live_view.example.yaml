@@ -18,3 +18,5 @@ paths:
     source: publisher
     rtspTransport: tcp
     sourceOnDemand: false
+  ai:
+    source: publisher

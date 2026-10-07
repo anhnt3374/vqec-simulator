@@ -48,6 +48,17 @@ test('unknown streams use the repository 404 envelope', async () => {
   });
 });
 
+test('AI query selects annotated playback and malformed queries return 400', async () => {
+  const response = await fetch(`${base}/api/v1/streams/board43/live-view?mode=ai`);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).mode, 'ai');
+  for (const query of ['mode=unknown', 'mode=raw&mode=ai']) {
+    const invalid = await fetch(`${base}/api/v1/streams/board43/live-view?${query}`);
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error.code, 'invalid_argument');
+  }
+});
+
 test('unknown routes also use the repository error envelope', async () => {
   const response = await fetch(`${base}/api/v1/missing`);
   assert.equal(response.status, 404);

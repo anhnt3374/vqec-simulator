@@ -16,7 +16,7 @@
       "name": "cpu",
       "hidden": true,
       "inherits": "base",
-      "cacheVariables": { "VQEC_RUNTIME": "cpu" }
+      "cacheVariables": { "VQEC_RUNTIME": "cpu", "VQEC_WITH_FFMPEG": "ON", "VQEC_WITH_ONNXRUNTIME": "ON", "VQEC_WITH_BYTETRACK": "ON" }
     },
     {
       "name": "gpu",

@@ -1,0 +1,7 @@
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(AV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc)
+add_library(vqec_ffmpeg ffmpeg_frame_source.cpp ffmpeg_frame_sink.cpp overlay_renderer.cpp)
+target_include_directories(vqec_ffmpeg SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(vqec_ffmpeg PUBLIC vqec_ports vqec_log PRIVATE PkgConfig::AV ${OpenCV_LIBS})
+vqec_set_warnings(vqec_ffmpeg)

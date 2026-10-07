@@ -120,6 +120,11 @@ EXPOSE 8080
 ENTRYPOINT ["/opt/vqec/bin/vqec_simulator"]
 CMD ["--config", "/etc/vqec/simulator.yaml"]
 
+# CPU live-view worker: adapters use the existing ORT/FFmpeg/OpenCV runtime libraries.
+FROM runtime AS live-ai-runtime
+ENTRYPOINT ["/opt/vqec/bin/vqec_live_ai"]
+CMD ["--config", "/etc/vqec/live_ai.yaml"]
+
 # Independent WebUI API and frontend toolchain (Ubuntu 22.04, linux/amd64).
 FROM ${UBUNTU_IMAGE} AS node-dev
 ARG DEBIAN_FRONTEND=noninteractive

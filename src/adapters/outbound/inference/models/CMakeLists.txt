@@ -1,0 +1,5 @@
+find_package(OpenCV REQUIRED COMPONENTS core imgproc)
+add_library(vqec_detection_models nanodet_detector.cpp yunet_detector.cpp detection_utils.cpp)
+target_include_directories(vqec_detection_models SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(vqec_detection_models PUBLIC vqec_ports vqec_inference_engine PRIVATE ${OpenCV_LIBS})
+vqec_set_warnings(vqec_detection_models)

@@ -25,6 +25,7 @@ compile_commands.json
 /models/**/*.dlc
 /models/**/*.hef
 /models/cache/
+/models/**/*.download
 
 # Large test media (downloaded, never committed)
 /tests/data/media/

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -11,8 +12,12 @@ namespace vqec::test {
 // Returns one scripted track list per update() call; empty once the script is exhausted.
 class FakeObjectTracker final : public ports::IObjectTracker {
 public:
-    explicit FakeObjectTracker(std::deque<std::vector<domain::Track>> script)
-        : script_(std::move(script)) {}
+    struct Record {
+        int resets = 0;
+    };
+    explicit FakeObjectTracker(std::deque<std::vector<domain::Track>> script,
+                               std::shared_ptr<Record> record = {})
+        : script_(std::move(script)), record_(std::move(record)) {}
 
     std::vector<domain::Track> update(
         const domain::Frame& /*frame*/,
@@ -25,10 +30,14 @@ public:
         return tracks;
     }
 
-    void reset() override {}
+    void reset() override {
+        if (record_)
+            ++record_->resets;
+    }
 
 private:
     std::deque<std::vector<domain::Track>> script_;
+    std::shared_ptr<Record> record_;
 };
 
 }  // namespace vqec::test

@@ -4,6 +4,7 @@
 
 # Runtime-agnostic inference contracts (no third-party deps), always built.
 add_subdirectory(outbound/inference/engine)
+add_subdirectory(outbound/inference/models)
 
 if(VQEC_WITH_DROGON)
     add_subdirectory(inbound/http)

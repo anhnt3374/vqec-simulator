@@ -1,0 +1,5 @@
+find_package(OpenCV REQUIRED COMPONENTS core)
+add_library(vqec_bytetrack byte_tracker.cpp)
+target_include_directories(vqec_bytetrack SYSTEM PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(vqec_bytetrack PUBLIC vqec_ports PRIVATE vqec_log ${OpenCV_LIBS})
+vqec_set_warnings(vqec_bytetrack)

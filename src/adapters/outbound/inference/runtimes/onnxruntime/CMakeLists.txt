@@ -1,0 +1,6 @@
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h PATHS /opt/onnxruntime/include REQUIRED)
+find_library(ONNXRUNTIME_LIBRARY onnxruntime PATHS /opt/onnxruntime/lib REQUIRED)
+add_library(vqec_onnxruntime onnx_runtime_engine.cpp)
+target_include_directories(vqec_onnxruntime SYSTEM PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
+target_link_libraries(vqec_onnxruntime PUBLIC vqec_inference_engine vqec_log PRIVATE ${ONNXRUNTIME_LIBRARY})
+vqec_set_warnings(vqec_onnxruntime)

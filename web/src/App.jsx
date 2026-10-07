@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import LiveView from './LiveView.jsx';
 
-function Topbar() {
+function Topbar({ mode }) {
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -9,7 +10,7 @@ function Topbar() {
           <div className="logo-text">SKYFLOW<br/><small>AI LIVE VIEW</small></div>
         </div>
         <div className="status-badge">
-          BOARD 43 &middot; RAW STREAM
+          BOARD 43 &middot; {mode === 'ai' ? 'AI OVERLAY' : 'RAW STREAM'}
         </div>
       </div>
       <div className="topbar-right">
@@ -54,26 +55,28 @@ function Sidebar() {
   );
 }
 
-function MainContent() {
+function MainContent({ mode, set_mode }) {
   return (
     <main className="content">
       <div className="video-panel">
         <div className="panel-header">
           <div className="tabs">
             <button
-              className="tab active"
+              className={`tab${mode === 'raw' ? ' active' : ''}`}
+              aria-pressed={mode === 'raw'}
+              onClick={() => set_mode('raw')}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
               Luồng Gốc (Raw Stream)
             </button>
             <button
-              className="tab"
-              disabled
-              title="Luồng AI chưa được triển khai"
+              className={`tab${mode === 'ai' ? ' active' : ''}`}
+              aria-pressed={mode === 'ai'}
+              onClick={() => set_mode('ai')}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M12 8v14"></path><path d="M8 12h8"></path></svg>
               Luồng AI (AI Overlay View)
-              <span className="badge">Chưa có</span>
+              <span className="badge">Person + Face</span>
             </button>
           </div>
           <div className="actions">
@@ -88,7 +91,7 @@ function MainContent() {
         </div>
 
         <div className="video-container">
-          <LiveView />
+          <LiveView key={mode} mode={mode} />
 
           <div className="video-overlay">
             <div className="corner-tl"></div>
@@ -107,7 +110,7 @@ function MainContent() {
             </button>
           </div>
           <div className="frame-stats">
-            <span className="highlight-cyan">Luồng Gốc</span>
+            <span className="highlight-cyan">{mode === 'ai' ? 'Luồng AI · Person + Face' : 'Luồng Gốc'}</span>
           </div>
         </div>
       </div>
@@ -116,12 +119,13 @@ function MainContent() {
 }
 
 export default function App() {
+  const [mode, set_mode] = useState('raw');
   return (
     <div className="app-container">
-      <Topbar />
+      <Topbar mode={mode} />
       <div className="main-layout">
         <Sidebar />
-        <MainContent />
+        <MainContent mode={mode} set_mode={set_mode} />
       </div>
     </div>
   );

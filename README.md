@@ -16,12 +16,16 @@ with zones and gates → annotated video, events, REST/WebSocket API, WebUI, SQL
 
 The WebUI API lives in `backend/` (NestJS). MediaMTX receives an RTSP source and
 serves its WebRTC player, which React loads using
-`GET /api/v1/streams/board43/live-view`. This first endpoint supplies raw playback
-metadata; camera availability and AI overlays are not included.
+`GET /api/v1/streams/board43/live-view`. Use the Gốc/AI buttons to switch between raw `/relay` and the annotated `/ai`
+stream. The C++ CPU worker runs NanoDet person and YuNet face detection in parallel.
+Playback metadata does not assert camera availability.
 
 Build and run this independent stack in Docker (Ubuntu 22.04, linux/amd64):
 
 ```bash
+scripts/dev.sh scripts/prepare_live_ai_models.sh
+cp config/live_ai.example.yaml config/live_ai.yaml
+export LIVE_AI_CONFIG=../config/live_ai.yaml
 export LIVE_VIEW_HOST=192.168.138.217  # LAN IP of the machine running Docker
 export LIVE_VIEW_SOURCE=rtsp://192.168.138.43:18554/live/hd
 export WEB_PORT=8000
@@ -38,9 +42,11 @@ If the existing board43 local relay is running, use its extended composition
 instead of starting a second MediaMTX on the same ports:
 
 ```bash
-docker compose -f config/relay.board43.yaml up -d --build
-docker compose -f config/relay.board43.yaml logs --tail 50
-docker compose -f config/relay.board43.yaml down
+export LIVE_AI_CONFIG=../config/live_ai.yaml
+# Ensure the local MediaMTX config includes: paths.ai.source: publisher
+docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml up -d --build
+docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml logs --tail 50 ai-worker
+docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml down
 ```
 
 The local composition publishes the Docker UI on **8000** and API on **8001**.
@@ -70,6 +76,62 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
 
 See [backend/README.md](backend/README.md) for configuration.
 
+### Change AI processing FPS
+
+Edit `processing_fps` in your ignored `config/live_ai.yaml`: `0` means unlimited;
+try `5`, `10`, `15`, `20`, `30`. Restart the worker after editing:
+
+```bash
+export LIVE_AI_CONFIG=../config/live_ai.yaml
+docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml up -d --force-recreate ai-worker
+```
+
+For the standalone stack, use `-f docker/compose.live_view.yaml` instead. Recreating
+ensures a file replaced by an editor is mounted again. `processing_fps` limits
+admission using source PTS; effective rates can be lower when source timing does
+not divide evenly or the CPU cannot keep up. It does not generate extra source
+frames. `output.fps` is the encoder nominal rate, not a second limiter. The output
+is `rtsp://<host>:8554/ai`, 1280×720 by default, with green `person #ID` boxes from ByteTrack and pink
+face boxes. ByteTrack preserves IDs across a short loss (default one second);
+Lost prediction boxes stay hidden. Tune the `tracking` block in
+`config/live_ai.yaml` and recreate the worker with the same command.
+`low_threshold` admits weak detections for existing tracks, `high_threshold`
+controls first-pass matching, and `new_threshold` starts new IDs. Effective
+NanoDet confidence is `min(person.confidence, tracking.low_threshold)` so low
+confidence associations remain available. IDs are local to a worker lifetime;
+reconnect resets associations while keeping its ID counter increasing. Live queues drop old frames under load.
+
+See [the measured CPU run and limitations](docs/adr/0004_parallel_ai_live_view.md).
+
+### Simulate a board with 18 FPS AI capacity
+
+In `config/live_ai.yaml`, set:
+
+```yaml
+processing_fps: 0
+simulation:
+  ai_fps: 18
+```
+
+Each person + face + tracking job occupies at least 55.6 ms of wall-clock time,
+including actual processing. Faster execution waits out the remaining budget;
+slower execution stays slower. Capture continues independently, and bounded live
+queues discard old frames when AI cannot keep up. This models service time and
+queue pressure, not the board's GPU/NPU utilization or memory bandwidth.
+
+`simulation.ai_fps: 0` disables artificial delay; accepted positive rates are
+1–1000. Keep `processing_fps: 0` when measuring simulated capacity; positive
+`processing_fps` is an additional source-PTS admission filter. Output timestamps
+remain those of selected source frames. `output.fps` stays nominal encoder FPS.
+Logs include `simulation_ai_fps`, `simulation_wait_ms`, `pair_ms`, input/processed
+FPS and queue drops. `pair_ms` includes the simulated wait; detector and tracking
+times report the actual processing costs.
+
+The Docker integration test with a timed 25 FPS source measured 17.953 processed
+FPS: 56 of 75 frames processed, 19 discarded, over 3.119 seconds. This uses test
+detectors to isolate the pacing behavior; real models or encode bottlenecks may
+lower throughput. Change the YAML and recreate the worker as described above.
+
 ### C++ core
 
 Everything runs in Docker (Ubuntu 22.04); the host only needs Docker (and the NVIDIA Container
@@ -91,6 +153,7 @@ docker compose -f docker/compose.yaml up --build          # simulator + MediaMTX
 
 v0.1 scaffold: domain (geometry, zones, gates, events), ports, stream pipeline, two example
 solutions (`zone_intrusion`, `line_crossing`), config loading, logging, tests, Docker images.
-The independent NestJS API and React raw live view use MediaMTX. C++ adapters
-(FFmpeg, ONNX Runtime, TensorRT, Drogon, SQLite, Qdrant, ByteTrack) are not
-implemented yet; their directories and build options are in place.
+The independent NestJS API and React Gốc/AI live view use MediaMTX. The CPU live
+AI worker implements FFmpeg RTSP capture/publication, ONNX Runtime, NanoDet and
+YuNet, plus ByteTrack person tracking. GPU execution, embeddings/recognition,
+face tracking and the remaining production adapters are future work.

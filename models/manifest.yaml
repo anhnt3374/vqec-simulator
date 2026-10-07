@@ -19,3 +19,24 @@ models:
     artifacts:
       onnxruntime: {file: yolov8n.onnx, sha256: ""}
       tensorrt: {file: yolov8n.onnx, sha256: "", precision: fp16}
+
+  - id: nanodet_plus_m_320_coco_v1
+    task: detection
+    labels: [person] # codec filters COCO class 0 and exposes only this output label
+    input: {width: 320, height: 320, layout: nchw, color: bgr, dtype: float32, letterbox: false}
+    normalize: {mean: [103.53, 116.28, 123.675], std: [57.375, 57.12, 58.395]}
+    output: {shape: [1, 2125, 112], coco_classes: 80, strides: [8, 16, 32, 64], reg_max: 7}
+    source: https://github.com/RangiLyu/nanodet/releases/tag/v1.0.0-alpha-1
+    license: Apache-2.0
+    artifacts:
+      onnxruntime: {file: live_ai/nanodet_plus_m_320.onnx, sha256: "4f12723cce3d48e47ca92cb925ba74d97a965c069208edca660bbb9f7ce2c610"}
+
+  - id: yunet_2023mar_v1
+    task: detection
+    labels: [face]
+    input: {width: 640, height: 640, layout: nchw, color: bgr, dtype: float32, scale: 1, letterbox: false}
+    output: {strides: [8, 16, 32], heads: [cls, obj, bbox, kps], landmarks: 5}
+    source: https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+    license: MIT
+    artifacts:
+      onnxruntime: {file: live_ai/yunet_2023mar.onnx, sha256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"}

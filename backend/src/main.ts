@@ -10,7 +10,7 @@ try {
   process.once('SIGTERM', () => logger.log('[backend] shutdown requested signal=SIGTERM'));
   process.once('SIGINT', () => logger.log('[backend] shutdown requested signal=SIGINT'));
   await app.listen(config.port, '0.0.0.0');
-  logger.log(`[backend] vqec-web-api 0.1.0 listening address=0.0.0.0 port=${config.port} stream=board43 mode=raw`);
+  logger.log(`[backend] vqec-web-api 0.1.0 listening address=0.0.0.0 port=${config.port} stream=board43 modes=raw,ai`);
 } catch (error) {
   logger.error(`[backend] startup failed code=invalid_configuration ${error instanceof Error ? error.message : 'unknown error'}`);
   process.exitCode = 1;

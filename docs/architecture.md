@@ -66,6 +66,43 @@ single-threaded.
 Scene changes from the WebUI go through `ISceneManagement` → persisted → handed to the pipeline
 with `request_scene_update()`, applied between two frames (no locks in solutions).
 
+### Prototype parallel live AI flow
+
+`LiveAiPipeline` decodes a frame once through `IFrameSource`, then dispatches the
+same immutable buffer to separate person and face worker queues. One active pair
+ensures that both result sequences match before merging. NanoDet and YuNet
+implement `IObjectDetector` and use separate ONNX Runtime CPU sessions (one
+intra-op thread each by default). Model preprocessing/decoding stays within the
+inference adapter family.
+
+Capture uses a bounded DropOldest queue for live input. PTS-based admission limits
+processing FPS. The sink queues merged annotations, resizes/draws on an owned
+copy, and encodes/publishes H.264 on a joined worker. Encoder timestamps preserve
+skipped-frame gaps and remain monotonic across source PTS resets. Read failures
+reconnect with bounded interruptible backoff; publication failures stop the
+worker so Compose can restart it. All worker threads are joined on shutdown.
+
+Optional `simulation.ai_fps` sets a wall-clock service budget for each detector
+pair plus tracking. A pure budget helper subtracts actual elapsed time; the
+coordinator waits only for the remainder, using interruptible timed condition
+variable waits. Capture and its DropOldest queue continue independently. This
+emulates limited AI capacity rather than skipping by source PTS, while preserving
+source timestamps for tracking and publication. Zero disables the simulation;
+old configs default to zero. No port signatures or adapter dependencies change.
+
+Person detections pass through a per-stream ByteTrack adapter on the coordinator
+thread: XYAH Kalman prediction and global IoU/score assignment for high scores,
+then IoU assignment of remaining active tracks to low scores. Tentative tracks
+require a second match except on the first frame. Lost tracks can be reacquired
+before the PTS-based timeout, but their prediction boxes are hidden in the overlay.
+Person labels include monotonically increasing IDs; these identify tracks within
+one worker lifetime, not recognized people. A source session marker travels in
+the capture queue so reconnect resets associations even if PTS does not rewind.
+The face branch uses frame-local Tentative annotations with ID zero. This worker
+does not invoke business solutions. Embeddings, events and database writes are
+outside this increment. The model pair and CPU backend are fixed for this worker;
+the manifest documents their pinned artifacts, and bootstrap validates hashes.
+
 ## 4. Solutions (bài toán)
 
 A solution implements `app::ISolution` and lives in `application/solutions/<type>/`:
@@ -137,14 +174,15 @@ The React UI in `web/` consumes a NestJS API in `backend/`. The initial endpoint
 `GET /api/v1/streams/board43/live-view` supplies configured raw WebRTC playback
 metadata. MediaMTX pulls board 43 `/live/hd` and serves its built-in browser player
 at `/relay`; the UI embeds it in an iframe. Media travels directly from MediaMTX
-to the browser, while NestJS supplies configuration metadata. This does not run
-inference or change the C++ port contracts. See ADR 0003.
+to the browser, while NestJS supplies configuration metadata. The dedicated `vqec_live_ai` worker adds annotated playback at `/ai`, selected by
+`?mode=ai`. Existing C++ port contracts remain unchanged. See ADRs 0003 and 0004.
 
 `docker/compose.live_view.yaml` runs this stack independently using Ubuntu 22.04
 Node build/runtime stages in `docker/Dockerfile` and a MediaMTX sidecar. The public
 player host and ICE candidate are configured from the Docker host's LAN address.
 The frontend container runs Vite for local development, proxying `/api` to NestJS.
-The C++ processing stack below remains scaffolded and can be developed separately.
+The CPU AI worker joins this stack; the full processing stack below remains
+separate. Models and worker YAML are read-only mounts. GPU inference is deferred.
 
 ### C++ processing stack
 

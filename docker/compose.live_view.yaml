@@ -51,3 +51,19 @@ services:
     volumes:
       - ../config/mediamtx.live_view.example.yaml:/mediamtx.yml:ro
     logging: *logs
+
+  ai-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: live-ai-runtime
+      args:
+        TARGET_RUNTIME: cpu
+    restart: unless-stopped
+    init: true
+    depends_on:
+      - mediamtx
+    volumes:
+      - ${LIVE_AI_CONFIG:-../config/live_ai.example.yaml}:/etc/vqec/live_ai.yaml:ro
+      - ../models:/opt/vqec/models:ro
+    logging: *logs

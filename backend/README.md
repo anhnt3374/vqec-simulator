@@ -21,7 +21,8 @@ use a same-origin `/api` reverse proxy to NestJS.
 
 `GET /api/v1/health` returns process liveness. It does not check the camera.
 `GET /api/v1/streams/board43/live-view` returns the configured raw WebRTC player
-URL; unknown stream IDs return 404. See `docs/rest_api.md` for the JSON contract.
+URL; `?mode=ai` selects the annotated `/ai` player. Invalid or repeated mode
+values return 400; unknown stream IDs return 404. See `docs/rest_api.md` for the JSON contract.
 
 The backend supports graceful shutdown. Logs contain startup/listen/shutdown and
 access status/duration with `[backend]`/`[http]` context. Access logging omits query
@@ -35,5 +36,5 @@ Browser smoke verification is in `tests/integration/web/live_view_smoke.cjs`.
 It requires a running stack with live video and Playwright/Chromium installed in
 an Ubuntu Docker test container. Set `PLAYWRIGHT_MODULE` to its module path and
 `LIVE_VIEW_WEB_URL` to the frontend URL; run the script with Node in that
-container. It checks decoded video frames, API retry and component fetch
+container. It checks decoded Gốc/AI/Gốc video frames, stale mode cancellation, API retry and component fetch
 cancellation on unmount. It is separate from network-free unit checks.
