@@ -131,6 +131,23 @@ node, zero ops); PostgreSQL is for multi-instance deployments.
 
 ## 7. Deployment (docker compose)
 
+### Independent WebUI API and live view
+
+The React UI in `web/` consumes a NestJS API in `backend/`. The initial endpoint
+`GET /api/v1/streams/board43/live-view` supplies configured raw WebRTC playback
+metadata. MediaMTX pulls board 43 `/live/hd` and serves its built-in browser player
+at `/relay`; the UI embeds it in an iframe. Media travels directly from MediaMTX
+to the browser, while NestJS supplies configuration metadata. This does not run
+inference or change the C++ port contracts. See ADR 0003.
+
+`docker/compose.live_view.yaml` runs this stack independently using Ubuntu 22.04
+Node build/runtime stages in `docker/Dockerfile` and a MediaMTX sidecar. The public
+player host and ICE candidate are configured from the Docker host's LAN address.
+The frontend container runs Vite for local development, proxying `/api` to NestJS.
+The C++ processing stack below remains scaffolded and can be developed separately.
+
+### C++ processing stack
+
 | Service | Image | Role |
 | --- | --- | --- |
 | `simulator` | built from `docker/Dockerfile` (`runtime` target) | pipelines, REST/WS, WebUI |

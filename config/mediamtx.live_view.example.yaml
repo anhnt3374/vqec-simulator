@@ -1,0 +1,20 @@
+# Source and LAN ICE address are configured through MTX_* environment variables
+# in docker/compose.live_view.yaml. Keep credentials in a local environment file.
+logLevel: info
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtmp: no
+hls: no
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcIPsFromInterfaces: no
+srt: no
+moq: no
+paths:
+  relay:
+    source: publisher
+    rtspTransport: tcp
+    sourceOnDemand: false

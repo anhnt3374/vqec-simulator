@@ -1,0 +1,53 @@
+# Independent live-view stack; do not run alongside another server on port 8554.
+name: vqec-live-view
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: backend-runtime
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: "3000"
+      MEDIAMTX_PUBLIC_URL: "http://${LIVE_VIEW_HOST:?Set LIVE_VIEW_HOST to the Docker host LAN IP}:8889"
+      WEB_ORIGINS: "http://localhost:${WEB_PORT:-8000},http://${LIVE_VIEW_HOST}:${WEB_PORT:-8000}"
+    ports:
+      - "${API_PORT:-8001}:3000"
+    logging: &logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: web-dev
+    restart: unless-stopped
+    init: true
+    environment:
+      API_PROXY_TARGET: http://backend:3000
+      VITE_API_BASE_URL: "${VITE_API_BASE_URL:-}"
+    ports:
+      - "${WEB_PORT:-8000}:5173"
+    depends_on:
+      - backend
+    logging: *logs
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.21.1
+    restart: unless-stopped
+    environment:
+      MTX_PATHS_RELAY_SOURCE: "${LIVE_VIEW_SOURCE:?Set LIVE_VIEW_SOURCE to the source RTSP URI}"
+      MTX_WEBRTCADDITIONALHOSTS: "${LIVE_VIEW_HOST}"
+    ports:
+      - "8554:8554"
+      - "8889:8889"
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+    volumes:
+      - ../config/mediamtx.live_view.example.yaml:/mediamtx.yml:ro
+    logging: *logs

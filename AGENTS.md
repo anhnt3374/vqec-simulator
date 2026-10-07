@@ -8,7 +8,7 @@ Mandatory instructions for AI coding agents and human contributors. Scope: the w
 VQEC Simulator is a C++ video-analytics service. It reads video inputs (RTSP, MP4), runs AI
 inference (detection, tracking, embeddings), applies per-use-case business logic with
 configurable zones and gates, and produces outputs: annotated video (RTSP/MP4), events,
-snapshots and counters. It exposes a REST + WebSocket backend and a static HTML WebUI, stores
+snapshots and counters. It exposes a REST + WebSocket backend and a React WebUI, stores
 data in a SQL database and a vector database, and runs inference on CPU or GPU today and on NPU
 later. Everything is built and run inside Docker (Ubuntu 22.04).
 
@@ -68,7 +68,7 @@ src/
     outbound/vectordb/               qdrant/ (default), memory/ (dev/test).
   bootstrap/     Composition root: main, config loading, solution factory, adapter wiring.
 tests/           unit/ (mirrors src/), integration/ (real adapters), fakes/, support/, data/.
-web/             Static WebUI: plain HTML + CSS + ES modules, no build step.
+web/             WebUI: ReactJS + Vite project.
 config/          Example runtime configuration (`*.example.yaml` tracked, local copies ignored).
 db/migrations/   Forward-only SQL migrations `NNNN_description.sql`.
 models/          `manifest.yaml` + docs. Model binaries are never committed.

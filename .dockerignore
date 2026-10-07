@@ -11,3 +11,8 @@ tests/data/media
 config/*.yaml
 !config/*.example.yaml
 **/*.db
+**/node_modules
+**/dist
+.superpowers
+.env
+**/*.local

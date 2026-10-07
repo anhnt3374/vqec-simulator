@@ -34,6 +34,9 @@ compile_commands.json
 *.pem
 *.key
 
+# Agent execution notes
+/.superpowers/
+
 # Editors
 .vscode/*
 !.vscode/extensions.json

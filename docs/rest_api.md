@@ -1,6 +1,7 @@
 # REST and WebSocket API
 
-Status: contract draft (v1), not yet implemented. Change this document before changing code.
+Status: NestJS implements health and raw live-view metadata. Other endpoints below
+remain draft contracts for the C++ processing service. Change this document before changing code.
 
 ## Conventions
 
@@ -33,6 +34,7 @@ Status: contract draft (v1), not yet implemented. Change this document before ch
 | GET | `/api/v1/health` | Liveness: `{ "status": "ok" }` |
 | GET | `/api/v1/system/info` | `version`, `runtime`, `backend`, compiled backends, solution types |
 | GET | `/api/v1/streams` | `{ "streams": [ { "id", "state", "fps", "frames_processed", "last_error" } ] }` |
+| GET | `/api/v1/streams/{stream_id}/live-view` | NestJS: configured browser player metadata; currently only `board43` |
 | POST | `/api/v1/streams/{id}/start` | Start a configured stream |
 | POST | `/api/v1/streams/{id}/stop` | Stop a stream |
 | GET | `/api/v1/streams/{id}/scene` | `{ "zones": [ { "id", "name", "polygon": [[x,y],...] } ], "gates": [ { "id", "name", "line": [[x,y],[x,y]] } ] }` |
@@ -42,6 +44,34 @@ Status: contract draft (v1), not yet implemented. Change this document before ch
 | GET | `/api/v1/metrics` | Per-stream counters (fps, stage latency, drops) |
 | POST | `/api/v1/client-errors` | WebUI reports JavaScript errors (logged at `warn`) |
 | WS | `/ws/v1/events` | Live events, one JSON object per message |
+
+## Live-view metadata (implemented by NestJS)
+
+`GET /api/v1/streams/board43/live-view` returns HTTP 200:
+
+```json
+{
+  "stream_id": "board43",
+  "mode": "raw",
+  "protocol": "webrtc",
+  "player_url": "http://192.168.138.217:8889/relay"
+}
+```
+
+`player_url` uses the configured public MediaMTX HTTP(S) base and can be embedded
+as an iframe with autoplay permission. It is independent of request Host headers.
+It does not return a source URI, credentials, FPS or camera availability. A 200
+response confirms the configuration exists; it does not confirm media delivery.
+Player connection errors are displayed by MediaMTX's built-in player.
+
+An unknown stream returns HTTP 404:
+
+```json
+{"error":{"code":"not_found","message":"stream 'unknown' does not exist"}}
+```
+
+`GET /api/v1/health` on NestJS returns `{"status":"ok"}` for process liveness.
+Unexpected errors return HTTP 500 using `internal` and a generic message.
 
 ## Event object
 

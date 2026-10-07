@@ -119,3 +119,44 @@ USER vqec
 EXPOSE 8080
 ENTRYPOINT ["/opt/vqec/bin/vqec_simulator"]
 CMD ["--config", "/etc/vqec/simulator.yaml"]
+
+# Independent WebUI API and frontend toolchain (Ubuntu 22.04, linux/amd64).
+FROM ${UBUNTU_IMAGE} AS node-dev
+ARG DEBIAN_FRONTEND=noninteractive
+ARG NODE_VERSION=22.23.3
+ARG NODE_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        -o /tmp/node.tar.xz \
+    && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum --check \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm /tmp/node.tar.xz
+ENV NODE_OPTIONS=--enable-source-maps
+WORKDIR /workspace
+
+FROM node-dev AS backend-build
+WORKDIR /workspace/backend
+COPY backend/package*.json ./
+RUN npm ci
+COPY backend/ ./
+RUN npm run build
+
+FROM node-dev AS backend-runtime
+ENV NODE_ENV=production
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm ci --omit=dev && useradd --system --uid 10002 backend
+COPY --from=backend-build /workspace/backend/dist/src ./dist
+USER backend
+EXPOSE 3000
+CMD ["node", "dist/main.js"]
+
+# Local live-view development server; Vite proxies /api to NestJS.
+FROM node-dev AS web-dev
+WORKDIR /workspace/web
+COPY web/package*.json ./
+RUN npm ci
+COPY web/ ./
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

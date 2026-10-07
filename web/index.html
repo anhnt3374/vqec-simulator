@@ -1,44 +1,14 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VQEC Simulator</title>
-  <link rel="stylesheet" href="css/main.css">
-  <script type="module" src="js/main.js"></script>
-</head>
-<body>
-  <header class="topbar">
-    <h1>VQEC Simulator</h1>
-    <span id="system-info" class="muted">connecting…</span>
-  </header>
-
-  <main class="layout">
-    <aside class="panel">
-      <h2>Streams</h2>
-      <ul id="stream-list" class="stream-list"></ul>
-    </aside>
-
-    <section class="panel viewer">
-      <div class="viewer-header">
-        <h2 id="viewer-title">No stream selected</h2>
-        <div class="toolbar">
-          <button type="button" data-tool="zone">Draw zone</button>
-          <button type="button" data-tool="gate">Draw gate</button>
-          <button type="button" id="save-scene" disabled>Save scene</button>
-        </div>
-      </div>
-      <div class="video-stage">
-        <!-- Live annotated video is served by MediaMTX (WebRTC); the canvas draws zones/gates. -->
-        <iframe id="live-view" title="Live view" allow="autoplay" hidden></iframe>
-        <canvas id="scene-canvas"></canvas>
-      </div>
-    </section>
-
-    <aside class="panel">
-      <h2>Events</h2>
-      <ol id="event-feed" class="event-feed"></ol>
-    </aside>
-  </main>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skyflow AI Live View</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
+
