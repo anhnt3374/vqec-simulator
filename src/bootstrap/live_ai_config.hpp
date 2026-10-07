@@ -28,6 +28,7 @@ struct LiveAiConfig {
     std::size_t queue_capacity = 2;
     std::chrono::milliseconds io_timeout{10000};
     std::chrono::seconds stats_interval{10};
+    std::chrono::seconds zone_dwell_time{5};
     LiveDetectorConfig person;
     LiveDetectorConfig face;
     adapters::bytetrack::ByteTrackerOptions tracking;

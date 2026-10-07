@@ -2,6 +2,8 @@
 add_library(vqec_application
     pipeline/stream_pipeline.cpp
     pipeline/live_ai_pipeline.cpp
+    pipeline/live_line_monitor.cpp
+    pipeline/live_zone_monitor.cpp
     solutions/solution_utils.cpp
     solutions/line_crossing/line_crossing_solution.cpp
     solutions/zone_intrusion/zone_intrusion_solution.cpp)

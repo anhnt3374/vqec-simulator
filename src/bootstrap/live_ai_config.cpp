@@ -188,6 +188,12 @@ Result<LiveAiConfig> parse_live_ai_config(const std::string& yaml) {
         if (root[key])
             config.stats_interval = std::chrono::seconds(root[key].as<int>());
         require(config.stats_interval.count() > 0, key);
+        key = "zone_dwell_seconds";
+        if (root[key])
+            config.zone_dwell_time = std::chrono::seconds(root[key].as<int>());
+        require(config.zone_dwell_time >= std::chrono::seconds(1) &&
+                    config.zone_dwell_time <= std::chrono::hours(1),
+                key);
         key = "person";
         config.person = detector_config(root[key], key);
         key = "face";

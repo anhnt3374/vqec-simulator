@@ -16,6 +16,7 @@ configure_file(build_info.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/bootstrap
 add_library(vqec_bootstrap
     app_config.cpp
     live_ai_config.cpp
+    live_line_bridge.cpp
     solution_factory.cpp)
 target_include_directories(vqec_bootstrap PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(vqec_bootstrap PUBLIC vqec_application yaml-cpp OpenSSL::Crypto)

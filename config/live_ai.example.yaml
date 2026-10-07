@@ -9,6 +9,8 @@ face: {confidence: 0.35, nms_iou: 0.5, num_threads: 1}
 queue_capacity: 2
 io_timeout_ms: 10000
 stats_interval_seconds: 10
+# Person bbox turns orange after this stream-time dwell inside the temporary zone (1..3600).
+zone_dwell_seconds: 5
 logging: {level: info, directory: /var/log/vqec}
 
 # ByteTrack: low-score detections preserve tracks; only new_threshold starts IDs.
@@ -27,3 +29,7 @@ tracking:
 # Keep processing_fps: 0 for throughput simulation. 0 disables, otherwise 1..1000.
 simulation:
   ai_fps: 0
+
+# Optional temporary line and zone control from the WebUI: set LIVE_LINE_FILE in the worker
+# environment to the backend's shared tmpfs snapshot path (see compose.live_view.yaml).
+# The compose stack sets /run/vqec/live-line.json for both services.

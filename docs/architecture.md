@@ -98,9 +98,24 @@ before the PTS-based timeout, but their prediction boxes are hidden in the overl
 Person labels include monotonically increasing IDs; these identify tracks within
 one worker lifetime, not recognized people. A source session marker travels in
 the capture queue so reconnect resets associations even if PTS does not rewind.
-The face branch uses frame-local Tentative annotations with ID zero. This worker
-does not invoke business solutions. Embeddings, events and database writes are
-outside this increment. The model pair and CPU backend are fixed for this worker;
+The face branch uses frame-local Tentative annotations with ID zero.
+
+Temporary live-line control is provided by an optional bootstrap watcher over a shared
+Docker tmpfs snapshot (`LIVE_LINE_FILE`). The NestJS backend writes validated normalized gate
+coordinates; the coordinator applies updates through a thread-safe latest-update mailbox
+between frames. A page session reset clears the line on reload. Confirmed person tracks use
+bottom-center anchors; forward crossings are logged and their IDs remain highlighted red in
+owned frame annotations until track expiry. Gate edits and source reconnect reset history.
+Temporary polygon zones share the page session and snapshot, with independent line/zone
+revisions and mailboxes so edits preserve the other feature's state. LiveZoneMonitor reuses
+ZoneIntrusionSolution with a person label filter for entry logs. Owned inside_zone_tracks
+annotations highlight visible confirmed people after 5 seconds inside (frame PTS, configurable
+zone_dwell_seconds). Leaving clears the timer and restores green; the red
+line-crossing highlight has priority. Zone entry logs include first observations inside.
+The FFmpeg sink renders gate/outward arrow, zone outline and per-track color. Database
+persistence and event publication remain deferred. See ADRs 0006 and 0007.
+
+The model pair and CPU backend are fixed for this worker;
 the manifest documents their pinned artifacts, and bootstrap validates hashes.
 
 ## 4. Solutions (bài toán)

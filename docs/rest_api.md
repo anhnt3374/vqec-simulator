@@ -102,3 +102,58 @@ Unexpected errors return HTTP 500 using `internal` and a generic message.
 | --- | --- | --- |
 | `zone_intrusion.enter` | A confirmed track's anchor enters a zone | `label` |
 | `line_crossing.cross` | A confirmed track crosses a gate | `label`, `direction` (`forward` = onto the right-hand side of the gate arrow) |
+
+## Temporary live AI line (NestJS)
+
+`POST /api/v1/streams/board43/live-line/session` with `{"session_id":"page_unique_id"}`
+starts a page session, clears the previous line and returns HTTP 201. Retrying the same
+session is idempotent. Every page load starts a new session, including loads in raw mode.
+Only the newest page controls the single shared AI output for this stream.
+
+`PUT /api/v1/streams/board43/live-line` with
+`{"session_id":"page_unique_id","line":[[0.1,0.5],[0.9,0.5]]}` saves/replaces the line;
+`line: null` deletes it. Returns HTTP 200 with
+`{"session_id":"page_unique_id","revision":"opaque_uuid","line":[[0.1,0.5],[0.9,0.5]]}`.
+Coordinates must be finite numbers in `[0,1]`; endpoints must differ. Invalid bodies
+return 400, unknown streams 404, and writes from superseded sessions 409 (`already_exists`).
+Saving confirms acceptance; the worker applies the revision asynchronously between frames.
+
+Forward means moving onto the right side of start → end (top → bottom for a horizontal
+line drawn left → right). The UI displays a perpendicular outward arrow and reverses the
+endpoints to flip direction. Only confirmed person tracks use bottom-center anchors.
+Outward crossings produce `line_crossing.cross` in logs with `direction=forward`, UTC
+milliseconds, frame sequence, gate and track ID. They are not persisted/published as events yet.
+The box stays red until the track expires. Editing/deleting the line or reconnecting resets
+crossing history and box color. Touching the line alone does not count.
+
+`LIVE_LINE_FILE` on backend and worker selects an atomic IPC snapshot on a shared Docker
+tmpfs volume. Backend resets it on startup. No SQL, browser storage or durable configuration
+is used. Without this optional bridge, the standalone AI worker has no live line configured.
+
+## Temporary live AI zone (NestJS)
+
+The same page session owns one line and one zone. `POST .../live-line/session`
+now clears both on a new page load. Line and zone saves are independent.
+
+`PUT /api/v1/streams/board43/live-zone` with
+`{"session_id":"page_unique_id","zone":[[0.2,0.2],[0.8,0.2],[0.8,0.8],[0.2,0.8]]}`
+saves a polygon; `zone: null` deletes it. The polygon closes implicitly from last
+vertex to first. Requires 3..32 distinct finite normalized points forming a simple,
+nonzero-area polygon. Concave zones are accepted; self intersections and collinear
+polygons return 400. Unknown streams return 404; superseded sessions return 409.
+
+Both save endpoints return `{session_id, revision, line_revision, zone_revision, line, zone}`.
+Each feature revision changes only when that feature is saved/cleared; session reset changes
+both. This keeps zone edits from resetting line-crossing history and vice versa.
+Old line-only IPC snapshots remain readable; missing `zone` means no zone.
+
+Confirmed person bottom-center anchors determine membership. A visible person turns
+orange after 5 seconds inside; outside is green.
+The worker setting `zone_dwell_seconds` defaults to 5 (validated range 1..3600).
+Dwell uses frame PTS; leaving restarts the timer. Red from a prior outward line crossing
+takes precedence, and face colors are unchanged. The zone outline is orange. Each new membership logs
+`zone_intrusion.enter` with stream, zone, track, frame and UTC milliseconds; staying
+inside does not repeat the log. A first confirmed observation inside counts as entry.
+Lost tracks retain membership; absent tracks are forgotten. Zone edits/deletes and
+source reconnect reset membership and dwell timers. Entry logs remain immediate.
+No database/event publication is used yet.

@@ -76,4 +76,88 @@ TEST(OverlayRenderer, DisplaysPersonIdAndSuppressesLostPredictionBoxes) {
     ASSERT_TRUE(empty.ok());
     EXPECT_EQ(lost.value()->data, empty.value()->data);
 }
+TEST(OverlayRenderer, ColorsOnlyOutwardCrossedPeopleRedAndDrawsConfiguredLine) {
+    auto pixels = std::make_shared<domain::ImageBuffer>();
+    pixels->width = 200;
+    pixels->height = 100;
+    pixels->stride_bytes = 600;
+    pixels->data.resize(60000, 0);
+    domain::Frame frame;
+    frame.width = 200;
+    frame.height = 100;
+    frame.image = pixels;
+    ports::FrameAnnotations annotations;
+    annotations.tracks = {{7, domain::TrackState::Confirmed, {10, 50, 30, 30}, 0, "person", 0.9F},
+                          {8, domain::TrackState::Confirmed, {60, 50, 30, 30}, 0, "person", 0.9F},
+                          {9, domain::TrackState::Tentative, {110, 50, 30, 30}, 0, "face", 0.9F}};
+    annotations.outward_crossed_tracks = {7, 9};
+    auto scene = std::make_shared<domain::Scene>();
+    scene->gates.push_back(domain::make_gate("line", "Line", {0.1F, 0.35F}, {0.9F, 0.35F}).value());
+    annotations.scene = scene;
+    auto result = adapters::ffmpeg::render_overlay(frame, annotations, 200, 100);
+    ASSERT_TRUE(result.ok());
+    const auto& data = result.value()->data;
+    const std::size_t person = 65 * 600 + 10 * 3;
+    const std::size_t other = 65 * 600 + 60 * 3;
+    const std::size_t face = 65 * 600 + 110 * 3;
+    EXPECT_EQ(data[person], 0);
+    EXPECT_EQ(data[person + 1], 0);
+    EXPECT_EQ(data[person + 2], 255);
+    EXPECT_EQ(data[other + 1], 255);
+    EXPECT_EQ(data[other + 2], 0);
+    EXPECT_EQ(data[face], 255);
+    EXPECT_EQ(data[face + 2], 255);
+    const std::size_t line = 34 * 600 + 50 * 3;
+    EXPECT_EQ(data[line], 255);
+    EXPECT_EQ(data[line + 1], 255);
+    EXPECT_EQ(data[line + 2], 0);
+    EXPECT_EQ(pixels->data, std::vector<std::uint8_t>(60000, 0));
+}
+
+TEST(OverlayRenderer, ColorsZoneMembersOrangeWithRedPriorityAndPreservesFaceColor) {
+    auto pixels = std::make_shared<domain::ImageBuffer>();
+    pixels->width = 200;
+    pixels->height = 100;
+    pixels->stride_bytes = 600;
+    pixels->data.resize(60000, 0);
+    domain::Frame frame;
+    frame.width = 200;
+    frame.height = 100;
+    frame.image = pixels;
+    ports::FrameAnnotations annotations;
+    annotations.tracks = {
+        {7, domain::TrackState::Confirmed, {10, 50, 30, 30}, 0, "person", 0.9F},
+        {8, domain::TrackState::Confirmed, {60, 50, 30, 30}, 0, "person", 0.9F},
+        {9, domain::TrackState::Tentative, {110, 50, 30, 30}, 0, "face", 0.9F},
+        {10, domain::TrackState::Confirmed, {160, 50, 30, 30}, 0, "person", 0.9F}};
+    annotations.outward_crossed_tracks = {7};
+    annotations.inside_zone_tracks = {7, 8, 9};
+    auto scene = std::make_shared<domain::Scene>();
+    scene->zones.push_back(
+        domain::make_zone("zone", "Zone", {{0.1F, 0.3F}, {0.9F, 0.3F}, {0.9F, 0.4F}, {0.1F, 0.4F}})
+            .value());
+    annotations.scene = scene;
+    auto result = adapters::ffmpeg::render_overlay(frame, annotations, 200, 100);
+    ASSERT_TRUE(result.ok());
+    const auto& data = result.value()->data;
+    const std::size_t red = 65 * 600 + 10 * 3;
+    const std::size_t orange = 65 * 600 + 60 * 3;
+    const std::size_t face = 65 * 600 + 110 * 3;
+    const std::size_t outside = 65 * 600 + 160 * 3;
+    const std::size_t zone = 29 * 600 + 50 * 3;
+    EXPECT_EQ(data[red], 0);
+    EXPECT_EQ(data[red + 1], 0);
+    EXPECT_EQ(data[red + 2], 255);
+    EXPECT_EQ(data[orange], 0);
+    EXPECT_EQ(data[orange + 1], 165);
+    EXPECT_EQ(data[orange + 2], 255);
+    EXPECT_EQ(data[face], 255);
+    EXPECT_EQ(data[face + 2], 255);
+    EXPECT_EQ(data[outside + 1], 255);
+    EXPECT_EQ(data[outside + 2], 0);
+    EXPECT_EQ(data[zone + 1], 165);
+    EXPECT_EQ(data[zone + 2], 255);
+    EXPECT_EQ(pixels->data, std::vector<std::uint8_t>(60000, 0));
+}
+
 }  // namespace vqec::test

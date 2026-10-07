@@ -13,6 +13,7 @@ namespace {
 constexpr int kChannels = 3;
 constexpr int kLineWidth = 2;
 constexpr double kFontScale = 0.5;
+const cv::Scalar kZoneColor(0, 165, 255);
 constexpr std::int64_t kClockRate = 90000;
 }  // namespace
 
@@ -56,8 +57,18 @@ Result<std::shared_ptr<domain::ImageBuffer>> render_overlay(
                 std::clamp((box.y + box.height) * scale_y, 0.0F, static_cast<float>(height - 1)));
             if (x2 <= x1 || y2 <= y1)
                 continue;
-            const cv::Scalar color =
-                track.label == "face" ? cv::Scalar(255, 128, 255) : cv::Scalar(80, 255, 0);
+            const bool outward = track.label == "person" &&
+                                 std::find(annotations.outward_crossed_tracks.begin(),
+                                           annotations.outward_crossed_tracks.end(),
+                                           track.id) != annotations.outward_crossed_tracks.end();
+            const bool inside_zone = track.label == "person" &&
+                                     std::find(annotations.inside_zone_tracks.begin(),
+                                               annotations.inside_zone_tracks.end(),
+                                               track.id) != annotations.inside_zone_tracks.end();
+            const cv::Scalar color = outward                 ? cv::Scalar(0, 0, 255)
+                                     : inside_zone           ? kZoneColor
+                                     : track.label == "face" ? cv::Scalar(255, 128, 255)
+                                                             : cv::Scalar(80, 255, 0);
             cv::rectangle(canvas, cv::Point(x1, y1), cv::Point(x2, y2), color, kLineWidth);
             std::ostringstream label;
             label << track.label;
@@ -66,6 +77,38 @@ Result<std::shared_ptr<domain::ImageBuffer>> render_overlay(
             label << ' ' << std::fixed << std::setprecision(2) << track.score;
             cv::putText(canvas, label.str(), cv::Point(x1, std::max(15, y1 - 5)),
                         cv::FONT_HERSHEY_SIMPLEX, kFontScale, color, 1);
+        }
+        if (annotations.scene) {
+            for (const auto& zone : annotations.scene->zones) {
+                std::vector<cv::Point> polygon;
+                polygon.reserve(zone.area.vertices().size());
+                for (const auto& p : zone.area.vertices())
+                    polygon.emplace_back(static_cast<int>(p.x * static_cast<float>(width - 1)),
+                                         static_cast<int>(p.y * static_cast<float>(height - 1)));
+                cv::polylines(canvas, polygon, true, kZoneColor, kLineWidth);
+            }
+            for (const auto& gate : annotations.scene->gates) {
+                const auto point = [&](domain::Point2f p) {
+                    return cv::Point(static_cast<int>(p.x * static_cast<float>(width - 1)),
+                                     static_cast<int>(p.y * static_cast<float>(height - 1)));
+                };
+                const auto start = point(gate.line.start);
+                const auto end = point(gate.line.end);
+                const cv::Scalar gate_color(255, 255, 0);
+                cv::line(canvas, start, end, gate_color, kLineWidth);
+                const cv::Point middle = (start + end) / 2;
+                const cv::Point2d delta(end.x - start.x, end.y - start.y);
+                const double length = cv::norm(delta);
+                constexpr double kDirectionArrowLength = 35.0;
+                if (length > 0.0) {
+                    const cv::Point target(
+                        middle.x + static_cast<int>(-delta.y / length * kDirectionArrowLength),
+                        middle.y + static_cast<int>(delta.x / length * kDirectionArrowLength));
+                    cv::arrowedLine(canvas, middle, target, gate_color, kLineWidth);
+                    cv::putText(canvas, "OUT", target, cv::FONT_HERSHEY_SIMPLEX, kFontScale,
+                                gate_color, 1);
+                }
+            }
         }
         // Always identify the real AI output, including frames containing no objects.
         cv::putText(canvas, "AI: NanoDet + ByteTrack person | YuNet face", cv::Point(10, 20),

@@ -1,7 +1,17 @@
-# Add the AI worker to an existing live-view composition, using that composition's network.
+# Extend an existing live-view composition containing backend + mediamtx with the AI worker.
 # docker compose -f config/relay.board43.yaml -f docker/compose.live_ai.yaml up -d --build
 # Paths here are relative to the first Compose file's directory (config/ in the example).
 services:
+  backend:
+    environment:
+      LIVE_LINE_FILE: /run/vqec/live-line.json
+    volumes:
+      - live-line:/run/vqec
+
+  web:
+    environment:
+      VITE_AI_ASPECT_RATIO: "${VITE_AI_ASPECT_RATIO:-1.7777777778}"
+
   ai-worker:
     build:
       context: ..
@@ -13,7 +23,11 @@ services:
     init: true
     depends_on:
       - mediamtx
+      - backend
+    environment:
+      LIVE_LINE_FILE: /run/vqec/live-line.json
     volumes:
+      - live-line:/run/vqec:ro
       - ${LIVE_AI_CONFIG:-../config/live_ai.example.yaml}:/etc/vqec/live_ai.yaml:ro
       - ../models:/opt/vqec/models:ro
     logging:
@@ -21,3 +35,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  live-line:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,mode=1777

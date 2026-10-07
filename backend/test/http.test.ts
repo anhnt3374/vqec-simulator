@@ -28,6 +28,39 @@ test('exposes process liveness on the documented route', async () => {
   assert.deepEqual(await response.json(), { status: 'ok' });
 });
 
+test('temporary line sessions save edits, clear on reload and reject stale tabs', async () => {
+  const url = `${base}/api/v1/streams/board43/live-line`;
+  const send = (path: string, method: string, body: unknown) => fetch(`${url}${path}`, {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  assert.equal((await send('/session', 'POST', { session_id: 'page_first' })).status, 201);
+  const line = [[0.1, 0.5], [0.9, 0.5]];
+  const saved = await send('', 'PUT', { session_id: 'page_first', line });
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await saved.json()).line, line);
+  for (const invalid of [[], [[0, 0], [0, 0]], [[-1, 0], [1, 1]], [[0, 0], ['1', 1]]]) {
+    assert.equal((await send('', 'PUT', { session_id: 'page_first', line: invalid })).status, 400);
+  }
+  const reloaded = await send('/session', 'POST', { session_id: 'page_reloaded' });
+  assert.equal(reloaded.status, 201);
+  assert.equal((await reloaded.json()).line, null);
+  assert.equal((await send('', 'PUT', { session_id: 'page_first', line })).status, 409);
+  assert.equal((await send('', 'PUT', { session_id: 'page_reloaded', line })).status, 200);
+  const cleared = await send('', 'PUT', { session_id: 'page_reloaded', line: null });
+  assert.equal(cleared.status, 200);
+  assert.equal((await cleared.json()).line, null);
+});
+
+test('allows temporary line writes in configured CORS preflight', async () => {
+  const response = await fetch(`${base}/api/v1/streams/board43/live-line`, {
+    method: 'OPTIONS', headers: {
+      Origin: 'http://localhost:5173', 'Access-Control-Request-Method': 'PUT',
+      'Access-Control-Request-Headers': 'content-type',
+    },
+  });
+  assert.match(response.headers.get('access-control-allow-methods') ?? '', /PUT/);
+});
+
 test('serves live-view metadata independent of caller Host header', async () => {
   const response = await fetch(`${base}/api/v1/streams/board43/live-view`, {
     headers: { Host: 'attacker.invalid', Origin: 'http://localhost:5173' },
@@ -97,4 +130,49 @@ test('logs unexpected error cause once without leaking secrets in response or lo
   assert.match(lines[0], /cause=Error/);
   assert.match(lines[0], /location=.*http\.test/);
   assert.doesNotMatch(lines[0], /private-token|super-secret/);
+});
+
+test('zone saves coexist with line and session reload clears both', async () => {
+  const base_path = `${base}/api/v1/streams/board43`;
+  const send = (path: string, body: unknown, method = 'PUT') => fetch(`${base_path}${path}`, {
+    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  await send('/live-line/session', { session_id: 'zone_page' }, 'POST');
+  const line = [[0.1, 0.5], [0.9, 0.5]];
+  const zone = [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]];
+  const saved_line = await (await send('/live-line', { session_id: 'zone_page', line })).json();
+  const response = await send('/live-zone', { session_id: 'zone_page', zone });
+  assert.equal(response.status, 200);
+  const saved_zone = await response.json();
+  assert.deepEqual(saved_zone.zone, zone);
+  assert.deepEqual(saved_zone.line, line);
+  assert.equal(saved_zone.line_revision, saved_line.line_revision);
+  const line_edit = await (await send('/live-line', { session_id: 'zone_page', line: [...line].reverse() })).json();
+  assert.deepEqual(line_edit.zone, zone);
+  assert.equal(line_edit.zone_revision, saved_zone.zone_revision);
+  const clear = await (await send('/live-zone', { session_id: 'zone_page', zone: null })).json();
+  assert.equal(clear.zone, null);
+  assert.deepEqual(clear.line, [...line].reverse());
+  await send('/live-zone', { session_id: 'zone_page', zone });
+  const reset = await (await send('/live-line/session', { session_id: 'new_zone_page' }, 'POST')).json();
+  assert.equal(reset.line, null);
+  assert.equal(reset.zone, null);
+  assert.equal((await send('/live-zone', { session_id: 'zone_page', zone })).status, 409);
+});
+
+test('zone rejects malformed degenerate and self-intersecting polygons', async () => {
+  const url = `${base}/api/v1/streams/board43`;
+  const send = (zone: unknown) => fetch(`${url}/live-zone`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: 'valid_zone_page', zone }),
+  });
+  await fetch(`${url}/live-line/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: 'valid_zone_page' }) });
+  for (const zone of [[], [[0, 0], [1, 1]], [[0, 0], [0.5, 0.5], [1, 1]],
+    [[0, 0], [1, 0], [1, 0], [0, 1]], [[0, 0], [1, 1], [0, 1], [1, 0]],
+    [[0, 0], [1.1, 0], [0, 1]], [[0, 0], ['1', 0], [0, 1]], Array(33).fill([0.5, 0.5])]) {
+    assert.equal((await send(zone)).status, 400);
+  }
+  // Concave polygons are valid too.
+  assert.equal((await send([[0.1, 0.1], [0.9, 0.1], [0.5, 0.4], [0.9, 0.9], [0.1, 0.9]])).status, 200);
 });

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -14,6 +15,7 @@
 #include "adapters/outbound/tracking/bytetrack/byte_tracker.hpp"
 #include "application/pipeline/live_ai_pipeline.hpp"
 #include "bootstrap/live_ai_config.hpp"
+#include "bootstrap/live_line_bridge.hpp"
 #include "common/log.hpp"
 #include "common/uri.hpp"
 
@@ -62,10 +64,10 @@ int run(int argc, char** argv) {
         config_path);
     VQEC_LOG_INFO(
         "[bootstrap] input={} output={} processing_fps={} simulation_ai_fps={} dimensions={}x{} "
-        "queue_capacity={}",
+        "queue_capacity={} zone_dwell_seconds={}",
         vqec::redact_uri(config.input_uri), vqec::redact_uri(config.output_uri),
         config.processing_fps, config.simulation_ai_fps, config.output_width, config.output_height,
-        config.queue_capacity);
+        config.queue_capacity, config.zone_dwell_time.count());
     status = vqec::bootstrap::verify_live_ai_models(config.models_dir);
     if (!status.ok()) {
         VQEC_LOG_CRITICAL("[bootstrap] model verification failed code={} message={}",
@@ -116,9 +118,13 @@ int run(int argc, char** argv) {
     vqec::app::LiveAiPipeline pipeline(
         "board43", std::move(source), person, face, std::move(sink),
         {config.processing_fps, config.queue_capacity, config.stats_interval,
-         config.simulation_ai_fps},
+         config.simulation_ai_fps, config.zone_dwell_time},
         std::make_unique<vqec::adapters::bytetrack::ByteTracker>(config.tracking));
-    status = pipeline.run(stop_requested);
+    {
+        const char* line_file = std::getenv("LIVE_LINE_FILE");
+        vqec::bootstrap::LiveLineBridge bridge(line_file ? line_file : "", pipeline);
+        status = pipeline.run(stop_requested);
+    }
     if (!status.ok() && !stop_requested.load()) {
         VQEC_LOG_CRITICAL("[bootstrap] AI worker stopped code={} message={}",
                           vqec::to_string(status.error().code), status.error().message);

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import LiveView from './LiveView.jsx';
+import LiveLineEditor from './LiveLineEditor.jsx';
+import use_live_line from './use_live_line.js';
 
 function Topbar({ mode }) {
   return (
@@ -56,6 +58,11 @@ function Sidebar() {
 }
 
 function MainContent({ mode, set_mode }) {
+  const [filter_open, set_filter_open] = useState(false);
+  const [editing, set_editing] = useState(null);
+  const line = use_live_line();
+  const valid_line = line.line.length === 2 &&
+    (line.line[0][0] !== line.line[1][0] || line.line[0][1] !== line.line[1][1]);
   return (
     <main className="content">
       <div className="video-panel">
@@ -80,18 +87,73 @@ function MainContent({ mode, set_mode }) {
             </button>
           </div>
           <div className="actions">
-            <button className="action-btn">
+            <button className="action-btn" aria-expanded={filter_open} onClick={() => set_filter_open(value => !value)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
               Bộ lọc đối tượng
             </button>
+            {filter_open && <div className="object-filter-menu">
+              <button className="action-btn" onClick={() => {
+                set_mode('ai'); set_editing('line'); set_filter_open(false);
+              }}>Vẽ line</button>
+              <button className="action-btn" onClick={() => {
+                set_mode('ai'); set_editing('zone'); set_filter_open(false);
+              }}>Vẽ zone</button>
+            </div>}
             <button className="icon-btn-square">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
             </button>
           </div>
         </div>
 
+        {editing === 'line' && mode === 'ai' && <div className="line-toolbar">
+          <span>Chọn 2 điểm trên video, kéo A/B để chỉnh. Mũi tên chỉ chiều ra ngoài.</span>
+          <div className="line-toolbar-actions">
+            <button className="action-btn" disabled={!line.ready || line.busy || !valid_line}
+              onClick={() => line.set_line([...line.line].reverse())}>Đảo chiều</button>
+            <button className="action-btn" disabled={!line.ready || line.busy}
+              onClick={() => line.set_line([])}>Vẽ lại</button>
+            <button className="action-btn" disabled={!line.ready || line.busy || !valid_line}
+              onClick={() => line.save()}>Lưu line</button>
+            <button className="action-btn" disabled={!line.ready || line.busy}
+              onClick={() => line.save([])}>Xóa line</button>
+            <button className="action-btn" disabled={line.busy}
+              onClick={() => { set_editing(null); line.set_line(line.saved); }}>Đóng</button>
+          </div>
+          <small>Bấm Lưu line để áp dụng. Line và zone chỉ lưu tạm; reload trang sẽ xóa cả hai.</small>
+          {line.message && <span role="status">{line.message}</span>}
+          {line.error && <div role="alert">{line.error}
+            {!line.ready && <button className="action-btn" onClick={line.retry}>Thử lại line</button>}
+          </div>}
+        </div>}
+        {editing === 'zone' && mode === 'ai' && <div className="line-toolbar">
+          <span>Chọn 3–32 điểm. Sau điểm thứ 3, tiếp tục bấm vào vị trí trống để thêm điểm; kéo các đỉnh để chỉnh.</span>
+          <span data-testid="zone-point-count">Đã chọn {line.zone.length}/32 điểm</span>
+          <div className="line-toolbar-actions">
+            <button className="action-btn" disabled={!line.ready || line.busy || !line.zone.length}
+              onClick={() => line.set_zone(line.zone.slice(0, -1))}>Bỏ điểm cuối</button>
+            <button className="action-btn" disabled={!line.ready || line.busy}
+              onClick={() => line.set_zone([])}>Vẽ lại</button>
+            <button className="action-btn" disabled={!line.ready || line.busy || line.zone.length < 3}
+              onClick={() => line.save_zone()}>Lưu zone</button>
+            <button className="action-btn" disabled={!line.ready || line.busy}
+              onClick={() => line.save_zone([])}>Xóa zone</button>
+            <button className="action-btn" disabled={line.busy}
+              onClick={() => { set_editing(null); line.set_zone(line.saved_zone); }}>Đóng</button>
+          </div>
+          <small>Bấm Lưu zone để áp dụng. Bbox cam sau khi ở trong zone đủ 5 giây; bbox đỏ được ưu tiên. Reload sẽ xóa line và zone.</small>
+          {line.message && <span role="status">{line.message}</span>}
+          {line.error && <div role="alert">{line.error}
+            {!line.ready && <button className="action-btn" onClick={line.retry}>Thử lại zone</button>}
+          </div>}
+        </div>}
         <div className="video-container">
           <LiveView key={mode} mode={mode} />
+          {mode === 'ai' && editing !== 'zone' && line.saved_zone.length >= 3 &&
+            <LiveLineEditor kind="zone" line={line.saved_zone} read_only />}
+          {editing === 'line' && mode === 'ai' && <LiveLineEditor line={line.line} set_line={line.set_line}
+            disabled={!line.ready || line.busy} />}
+          {editing === 'zone' && mode === 'ai' && <LiveLineEditor kind="zone" line={line.zone}
+            set_line={line.set_zone} disabled={!line.ready || line.busy} />}
 
           <div className="video-overlay">
             <div className="corner-tl"></div>

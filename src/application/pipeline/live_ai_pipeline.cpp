@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "application/pipeline/ai_simulation_budget.hpp"
+#include "application/pipeline/live_line_monitor.hpp"
+#include "application/pipeline/live_zone_monitor.hpp"
 #include "common/bounded_queue.hpp"
 #include "common/log.hpp"
 
@@ -83,6 +85,18 @@ LiveAiPipeline::LiveAiPipeline(domain::StreamId stream_id,
       options_(options),
       person_tracker_(std::move(person_tracker)) {
     assert(source_ && person_ && face_ && sink_ && options_.queue_capacity > 0);
+}
+
+void LiveAiPipeline::request_gate_update(std::optional<domain::Gate> gate) {
+    std::lock_guard<std::mutex> lock(gate_mutex_);
+    pending_gate_ = std::move(gate);
+    gate_pending_ = true;
+}
+
+void LiveAiPipeline::request_zone_update(std::optional<domain::Zone> zone) {
+    std::lock_guard<std::mutex> lock(gate_mutex_);
+    pending_zone_ = std::move(zone);
+    zone_pending_ = true;
 }
 
 Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
@@ -205,7 +219,9 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
         auto window_start = Clock::now();
         std::uint64_t processed = 0, skipped = 0, previous_capture = 0, previous_drops = 0;
         Clock::duration person_time{}, face_time{}, pair_time{};
-        const auto scene = std::make_shared<const domain::Scene>();
+        auto scene = std::make_shared<const domain::Scene>();
+        LiveLineMonitor line_monitor;
+        LiveZoneMonitor zone_monitor(options_.zone_dwell_time);
         while (!stop_requested.load()) {
             auto captured_frame = captured.pop();
             if (!captured_frame)
@@ -215,8 +231,47 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
                 (previous_pts && frame->pts < *previous_pts)) {
                 if (person_tracker_)
                     person_tracker_->reset();
+                line_monitor.reset();
+                zone_monitor.reset();
                 admission = FrameAdmission(options_.processing_fps);
                 active_session = captured_frame->session;
+            }
+            std::optional<domain::Gate> updated_gate;
+            bool gate_changed = false;
+            std::optional<domain::Zone> updated_zone;
+            bool zone_changed = false;
+            {
+                std::lock_guard<std::mutex> lock(gate_mutex_);
+                if (gate_pending_) {
+                    updated_gate = std::move(pending_gate_);
+                    gate_pending_ = false;
+                    gate_changed = true;
+                }
+                if (zone_pending_) {
+                    updated_zone = std::move(pending_zone_);
+                    zone_pending_ = false;
+                    zone_changed = true;
+                }
+            }
+            if (gate_changed) {
+                auto updated_scene = std::make_shared<domain::Scene>(*scene);
+                updated_scene->gates.clear();
+                if (updated_gate)
+                    updated_scene->gates.push_back(*updated_gate);
+                scene = std::move(updated_scene);
+                line_monitor.set_gate(std::move(updated_gate));
+                VQEC_LOG_INFO("[stream={}] temporary line applied gates={}", stream_id_,
+                              scene->gates.size());
+            }
+            if (zone_changed) {
+                auto updated_scene = std::make_shared<domain::Scene>(*scene);
+                updated_scene->zones.clear();
+                if (updated_zone)
+                    updated_scene->zones.push_back(*updated_zone);
+                scene = std::move(updated_scene);
+                zone_monitor.set_zone(std::move(updated_zone));
+                VQEC_LOG_INFO("[stream={}] temporary zone applied zones={}", stream_id_,
+                              scene->zones.size());
             }
             previous_pts = frame->pts;
             if (!admission.admit(frame->pts)) {
@@ -259,6 +314,20 @@ Status LiveAiPipeline::run(const std::atomic<bool>& stop_requested) {
                 annotations.tracks.push_back({0, domain::TrackState::Tentative, detection.box,
                                               detection.class_id, detection.label,
                                               detection.score});
+            line_monitor.annotate(*frame, annotations);
+            zone_monitor.annotate(*frame, annotations);
+            for (const auto& event : annotations.events) {
+                const auto utc_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        event.occurred_at.time_since_epoch())
+                                        .count();
+                VQEC_LOG_INFO(
+                    "[stream={}] event={} gate={} zone={} track={} direction={} "
+                    "frame_sequence={} occurred_at_utc_ms={}",
+                    stream_id_, event.type, event.gate_id.value_or(""), event.zone_id.value_or(""),
+                    event.track_id.value_or(0),
+                    event.attributes.count("direction") ? event.attributes.at("direction") : "none",
+                    event.frame_sequence, utc_ms);
+            }
             const auto simulation_start = Clock::now();
             const auto unused =
                 simulation_budget.remaining(std::chrono::duration_cast<std::chrono::nanoseconds>(

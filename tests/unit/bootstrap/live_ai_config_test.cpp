@@ -79,4 +79,17 @@ TEST(LiveAiConfig, ParsesSimulationRateAndDefaultsToDisabled) {
     }
     EXPECT_FALSE(bootstrap::parse_live_ai_config(kConfig + "simulation: invalid\n").ok());
 }
+TEST(LiveAiConfig, DefaultsZoneDwellToFiveSecondsAndValidatesOverrides) {
+    auto defaults = bootstrap::parse_live_ai_config(kConfig);
+    ASSERT_TRUE(defaults.ok());
+    EXPECT_EQ(defaults.value().zone_dwell_time, std::chrono::seconds(5));
+    auto custom = bootstrap::parse_live_ai_config(kConfig + "zone_dwell_seconds: 7\n");
+    ASSERT_TRUE(custom.ok());
+    EXPECT_EQ(custom.value().zone_dwell_time, std::chrono::seconds(7));
+    for (const auto* value : {"0", "-1", ".nan", ".inf", "3601"}) {
+        auto bad = bootstrap::parse_live_ai_config(kConfig + "zone_dwell_seconds: " + value + "\n");
+        ASSERT_FALSE(bad.ok()) << value;
+        EXPECT_NE(bad.error().message.find("zone_dwell_seconds"), std::string::npos);
+    }
+}
 }  // namespace vqec::test

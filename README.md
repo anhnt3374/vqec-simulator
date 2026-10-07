@@ -76,6 +76,36 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
 
 See [backend/README.md](backend/README.md) for configuration.
 
+### Draw a temporary outward-crossing line
+
+Open **Bộ lọc đối tượng → Vẽ line**. The UI switches to AI playback. Click two points
+on the video and drag A/B to edit. The perpendicular **Ra ngoài** arrow indicates the
+counted direction; **Đảo chiều** reverses it. **Lưu line** applies the current line;
+**Xóa line** removes it. **Vẽ lại** only clears the draft until you save a replacement.
+Confirmed people crossing outward get red boxes until their tracks expire; every outward
+crossing writes `line_crossing.cross` to `ai-worker` logs. Faces keep their pink boxes.
+
+Reload clears the line and all crossing highlights. This prototype uses one active page
+session for the shared stream, so opening another page takes control and clears the old
+line. Both Compose recipes above wire a RAM-backed snapshot between backend and worker;
+rebuild/recreate the stack after updating. No database or browser storage is used.
+For a custom output aspect ratio, pass `VITE_AI_ASPECT_RATIO=width/height` as a numeric
+ratio to the web service (default 1.7777777778 for 1280×720).
+
+### Draw a temporary polygon zone
+
+Open **Bộ lọc đối tượng → Vẽ zone**. Click 3–32 points in order; the polygon closes
+back to its first vertex. Drag numbered vertices to edit, use **Bỏ điểm cuối** to undo,
+and **Lưu zone** to apply. **Xóa zone** removes the saved zone. **Vẽ lại** clears only
+the draft. The saved zone stays shaded in the AI view after closing the editor or switching
+to line drawing; the shade does not intercept clicks. Self-intersecting/degenerate polygons are rejected; concave polygons are allowed.
+
+Confirmed people's bottom-center anchors determine membership: bbox turns **orange after 5 seconds inside**,
+**green outside**, with **red line-crossing color taking precedence**. The worker logs
+`zone_intrusion.enter` once per entry, including a first observation inside. Line and zone
+saves do not reset each other's tracking history. Both are temporary and clear on reload.
+Rebuild/recreate the backend, web and AI worker using the same Compose commands above.
+
 ### Change AI processing FPS
 
 Edit `processing_fps` in your ignored `config/live_ai.yaml`: `0` means unlimited;

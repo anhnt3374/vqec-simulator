@@ -17,6 +17,12 @@ struct FrameAnnotations {
     std::vector<domain::Track> tracks;
     std::shared_ptr<const domain::Scene> scene;  // Never null when produced by the pipeline.
     std::vector<domain::Event> events;           // Events raised on this frame.
+    // Persistent outward-crossing highlights for visible tracks in this frame; empty by default.
+    // Owned snapshot, safe for a sink to copy into its bounded publication queue.
+    std::vector<domain::TrackId> outward_crossed_tracks = {};
+    // Visible confirmed people inside for the configured dwell time. Red takes precedence.
+    // Owned snapshot, safe for queued sinks.
+    std::vector<domain::TrackId> inside_zone_tracks = {};
 };
 
 // Video output: annotated RTSP push, MP4 recording, preview. One instance per stream output,

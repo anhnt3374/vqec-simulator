@@ -2,6 +2,7 @@ export interface AppConfig {
   port: number;
   player_base_url: string;
   cors_origins: string[];
+  live_line_file?: string;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -30,5 +31,5 @@ export function load_config(env: NodeJS.ProcessEnv): AppConfig {
       if (url.pathname !== '/') throw new Error('WEB_ORIGINS: expected HTTP(S) origins without paths');
       return url.origin;
     });
-  return { port, player_base_url: base.href.replace(/\/+$/, ''), cors_origins };
+  return { port, player_base_url: base.href.replace(/\/+$/, ''), cors_origins, ...(env.LIVE_LINE_FILE ? { live_line_file: env.LIVE_LINE_FILE } : {}) };
 }
